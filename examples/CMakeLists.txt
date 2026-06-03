@@ -1,0 +1,6 @@
+function(vpp_example name)
+    add_executable(example_${name} ${name}.cpp)
+    target_link_libraries(example_${name} PRIVATE vpp::vpp)
+endfunction()
+
+vpp_example(ordered_registry)

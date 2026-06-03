@@ -1,0 +1,12 @@
+build
+.vs
+out
+CMakeUserPresets.json
+*.7z
+*.wav
+*.ini
+.vscode/settings.json
+.cache
+.vs
+*.bat
+compile_commands.json
