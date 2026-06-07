@@ -27,13 +27,18 @@
 vibes-plus-plus/
   include/
     vpp/
-      ordered_registry.hpp
+      keyed_vector.hpp
   tests/
     CMakeLists.txt
-    test_ordered_registry.cpp
+    test_keyed_vector.cpp
+  examples/
+    CMakeLists.txt
+    keyed_vector.cpp
   CMakeLists.txt
+  CMakePresets.json
   LICENSE
   SPEC.md
+  CHANGELOG.md
 ```
 
 ## Build & Install
@@ -52,6 +57,14 @@ cmake --build build
 ctest --test-dir build
 ```
 
+With presets (configure `CMakeUserPresets.json` for your toolchain first):
+
+```sh
+cmake --preset dev
+cmake --build --preset dev-debug
+ctest --preset dev
+```
+
 Installing exports a `vppConfig.cmake` so consumers can write:
 
 ```cmake
@@ -63,48 +76,48 @@ target_link_libraries(my_app PRIVATE vpp::vpp)
 
 ## Component Requirements
 
-### `ordered_registry`
+### `keyed_vector`
 
-**Header:** `<vpp/ordered_registry.hpp>`
+**Header:** `<vpp/keyed_vector.hpp>`
 
-An insertion-ordered container that stores elements of type `T` in contiguous memory (`std::vector`) and looks them up by a key derived from each element via a caller-supplied callable.
+An insertion-ordered container that stores elements of type `T` in contiguous memory (`std::vector`) and provides keyed lookup via a caller-supplied callable. Suitable for small collections where stable insertion order and contiguous storage matter more than lookup speed.
 
 #### Template parameters
 
 | Parameter | Description |
 |-----------|-------------|
 | `T` | Element type |
-| `RegKey` | Key type; must be equality-comparable |
-| `KeyFunc` | Callable: `RegKey(const T&)`. May be a free-function pointer, a stateless functor, or a lambda. |
+| `Key` | Key type; must be equality-comparable |
+| `key_func_t` | Callable: `Key(const T&)`. May be a free-function pointer, a stateless functor, or a lambda. |
 
-Stateless functors are default-constructed inside the registry. For lambdas (which are not default-constructible in C++17), pass the instance to the constructor.
+Stateless functors are default-constructed inside the container. For lambdas (which are not default-constructible in C++17), pass the instance to the constructor.
 
 A CTAD deduction guide is provided for the common case of a free-function pointer:
 
 ```cpp
-vpp::ordered_registry reg{&get_my_key};
+vpp::keyed_vector kv{&get_my_key};
 ```
 
 #### Invariants
 
-- Keys are unique; `add()` rejects duplicates.
+- Keys are unique; `insert()` rejects duplicates.
 - Insertion order is preserved across all operations.
-- Lookup is O(n); suited for small registries where stable order and contiguous storage matter more than lookup speed.
+- Lookup is O(n); suited for small collections where stable order and contiguous storage matter more than lookup speed.
 
 #### API
 
 | Expression | Description |
 |-----------|-------------|
-| `reg.insert(t)` | Insert element; returns `{iterator, true}` on insertion, `{iterator-to-existing, false}` on duplicate. |
-| `reg.insert_or_assign(t)` | Insert or overwrite; returns `{iterator, true}` on insertion, `{iterator, false}` on assignment. |
-| `reg.erase(key)` | Remove by key; no-op on miss. |
-| `reg.erase(ptr)` | Remove by pointer; throws `std::out_of_range` if not owned. |
-| `reg.clear()` | Remove all elements. |
-| `reg[key]` | Unchecked access; asserts in debug builds on miss. |
-| `reg.at(key)` | Checked access by key; throws `std::out_of_range` on miss. |
-| `reg.find(key)` | Returns iterator; `end()` on miss. Const overload provided. |
-| `reg.find_ptr(key)` | Returns `T*`; `nullptr` on miss. Const overload provided. |
-| `reg.contains(key)` | Returns `bool`. |
-| `reg.size()` | Number of elements. |
-| `reg.empty()` | True when no elements. |
+| `kv.insert(t)` | Insert element; returns `{iterator, true}` on insertion, `{iterator-to-existing, false}` on duplicate. |
+| `kv.insert_or_assign(t)` | Insert or overwrite; returns `{iterator, true}` on insertion, `{iterator, false}` on assignment. Position in insertion order is preserved on assignment. |
+| `kv.erase(key)` | Remove by key; no-op on miss. |
+| `kv.erase(ptr)` | Remove by pointer; throws `std::out_of_range` if not owned. |
+| `kv.clear()` | Remove all elements. |
+| `kv[key]` | Unchecked access; asserts in debug builds on miss. |
+| `kv.at(key)` | Checked access by key; throws `std::out_of_range` on miss. |
+| `kv.find(key)` | Returns iterator; `end()` on miss. Const overload provided. |
+| `kv.find_ptr(key)` | Returns `T*`; `nullptr` on miss. Const overload provided. |
+| `kv.contains(key)` | Returns `bool`. |
+| `kv.size()` | Number of elements. |
+| `kv.empty()` | True when no elements. |
 | `begin/end/cbegin/cend` | Standard range iteration in insertion order. |

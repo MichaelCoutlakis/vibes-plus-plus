@@ -14,39 +14,39 @@
 namespace vpp
 {
 
-// Insertion-ordered container that stores elements by a key derived from each
-// element via a caller-supplied callable (KeyFunc). Lookup is O(n); suited for
-// small registries where stable order and contiguous storage matter more than
-// lookup speed.
+// Insertion-ordered container that stores elements of type T in contiguous
+// memory and provides keyed lookup via a caller-supplied callable (key_func).
+// Lookup is O(n); suited for small collections where stable insertion order
+// and contiguous storage matter more than lookup speed.
 //
-// KeyFunc must be callable as: RegKey(const T&)
+// key_func must be callable as: Key(const T&)
 // For stateless functors and free functions it may be default-constructed;
 // for lambdas, pass the instance to the constructor.
-template <typename T, typename RegKey, typename KeyFunc>
-class ordered_registry
+template <typename T, typename Key, typename key_func_t>
+class keyed_vector
 {
 public:
-    using container_type = std::vector<T>;
-    using iterator = typename container_type::iterator;
-    using const_iterator = typename container_type::const_iterator;
-    using key_type = RegKey;
+    using container_type  = std::vector<T>;
+    using iterator        = typename container_type::iterator;
+    using const_iterator  = typename container_type::const_iterator;
+    using key_type        = Key;
 
-    ordered_registry() = default;
-    explicit ordered_registry(KeyFunc kf) :
+    keyed_vector() = default;
+    explicit keyed_vector(key_func_t kf) :
         m_key_func(std::move(kf))
     {
     }
 
     // ---- iterators / capacity ----
 
-    auto begin() noexcept { return m_items.begin(); }
-    auto end() noexcept { return m_items.end(); }
-    auto begin() const noexcept { return m_items.begin(); }
-    auto end() const noexcept { return m_items.end(); }
+    auto begin()  noexcept { return m_items.begin(); }
+    auto end()    noexcept { return m_items.end(); }
+    auto begin()  const noexcept { return m_items.begin(); }
+    auto end()    const noexcept { return m_items.end(); }
     auto cbegin() const noexcept { return m_items.cbegin(); }
-    auto cend() const noexcept { return m_items.cend(); }
+    auto cend()   const noexcept { return m_items.cend(); }
 
-    auto size() const noexcept { return m_items.size(); }
+    auto size()  const noexcept { return m_items.size(); }
     bool empty() const noexcept { return m_items.empty(); }
 
     // ---- modifiers ----
@@ -55,7 +55,7 @@ public:
 
     // Inserts t if its key is not already present.
     // Returns {iterator-to-element, true} on insertion,
-    //         {iterator-to-existing,  false} on duplicate.
+    //         {iterator-to-existing, false} on duplicate.
     std::pair<iterator, bool> insert(T t)
     {
         auto k = find_idx(m_key_func(t));
@@ -93,7 +93,7 @@ public:
     {
         const T *base = m_items.data();
         if(ptr < base || ptr >= base + m_items.size())
-            throw std::out_of_range("ordered_registry::erase: pointer not in container");
+            throw std::out_of_range("keyed_vector::erase: pointer not in container");
         m_items.erase(m_items.begin() + (ptr - base));
     }
 
@@ -104,13 +104,13 @@ public:
     T &operator[](key_type key)
     {
         T *p = find_ptr(key);
-        assert(p && "ordered_registry::operator[]: key not found");
+        assert(p && "keyed_vector::operator[]: key not found");
         return *p;
     }
     const T &operator[](key_type key) const
     {
         const T *p = find_ptr(key);
-        assert(p && "ordered_registry::operator[]: key not found");
+        assert(p && "keyed_vector::operator[]: key not found");
         return *p;
     }
 
@@ -119,13 +119,13 @@ public:
     {
         if(T *p = find_ptr(key))
             return *p;
-        throw std::out_of_range("ordered_registry::at: key not found");
+        throw std::out_of_range("keyed_vector::at: key not found");
     }
     const T &at(key_type key) const
     {
         if(const T *p = find_ptr(key))
             return *p;
-        throw std::out_of_range("ordered_registry::at: key not found");
+        throw std::out_of_range("keyed_vector::at: key not found");
     }
 
     // ---- search ----
@@ -155,7 +155,7 @@ public:
     bool contains(key_type key) const { return find_ptr(key) != nullptr; }
 
 protected:
-    auto &items() noexcept { return m_items; }
+    auto &items()       noexcept { return m_items; }
     const auto &items() const noexcept { return m_items; }
 
     std::size_t find_idx(key_type key) const
@@ -168,12 +168,12 @@ protected:
 
 private:
     container_type m_items;
-    KeyFunc m_key_func{};
+    key_func_t     m_key_func{};
     static constexpr std::size_t npos{std::numeric_limits<std::size_t>::max()};
 };
 
-// Deduction guide: ordered_registry reg(&get_key);
-template <typename T, typename RegKey>
-ordered_registry(RegKey (*)(const T &)) -> ordered_registry<T, RegKey, RegKey (*)(const T &)>;
+// Deduction guide: keyed_vector kv(&get_key);
+template <typename T, typename Key>
+keyed_vector(Key (*)(const T &)) -> keyed_vector<T, Key, Key (*)(const T &)>;
 
 } // namespace vpp
