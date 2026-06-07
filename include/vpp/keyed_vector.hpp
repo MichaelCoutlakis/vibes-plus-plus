@@ -158,6 +158,18 @@ public:
 
     bool contains(key_type key) const { return find_ptr(key) != nullptr; }
 
+    // ---- vector access ----
+
+    // Returns a reference to the underlying vector, giving direct access to
+    // the full std::vector API (e.g. index by position, data(), capacity()).
+    //
+    // Note: the non-const overload allows mutation of elements including their
+    // key fields, which can violate the uniqueness invariant. This is no worse
+    // than mutation via iterators or find_ptr() and is accepted as a conscious
+    // trade-off in exchange for the convenience of the full vector API.
+    container_type &as_vec() noexcept { return m_items; }
+    const container_type &as_vec() const noexcept { return m_items; }
+
 protected:
     auto &items()       noexcept { return m_items; }
     const auto &items() const noexcept { return m_items; }

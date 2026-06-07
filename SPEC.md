@@ -118,6 +118,7 @@ vpp::keyed_vector kv{&get_my_key};
 | `kv.find(key)` | Returns iterator; `end()` on miss. Const overload provided. |
 | `kv.find_ptr(key)` | Returns `T*`; `nullptr` on miss. Const overload provided. |
 | `kv.contains(key)` | Returns `bool`. |
+| `kv.as_vec()` | Returns a reference to the underlying `std::vector`, giving direct access to the full vector API (positional indexing, `data()`, etc.). Const overload provided. Mutating key fields through the non-const overload can violate key uniqueness — same caveat as mutation via iterators or `find_ptr`. |
 | `kv.size()` | Number of elements. |
 | `kv.empty()` | True when no elements. |
 | `begin/end/cbegin/cend` | Standard range iteration in insertion order. |

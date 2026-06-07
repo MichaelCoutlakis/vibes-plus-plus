@@ -225,6 +225,29 @@ TEST(keyed_vector, InsertionOrderPreserved)
 }
 
 // ---------------------------------------------------------------------------
+// as_vec
+// ---------------------------------------------------------------------------
+
+TEST(keyed_vector, AsVecIndexByPosition)
+{
+    auto kv = make_kv();
+    kv.insert({10, "ten"});
+    kv.insert({20, "twenty"});
+    kv.insert({30, "thirty"});
+    EXPECT_EQ(kv.as_vec()[0].id, 10);
+    EXPECT_EQ(kv.as_vec()[1].id, 20);
+    EXPECT_EQ(kv.as_vec()[2].id, 30);
+}
+
+TEST(keyed_vector, AsVecConstOverload)
+{
+    auto kv = make_kv();
+    kv.insert({5, "five"});
+    const auto& ckv = kv;
+    EXPECT_EQ(ckv.as_vec()[0].name, "five");
+}
+
+// ---------------------------------------------------------------------------
 // functor key_func (not just free-function pointer)
 // ---------------------------------------------------------------------------
 
