@@ -27,7 +27,7 @@ namespace vpp
 //   - lambda or functor:          pass instance to constructor
 // std::invoke is used internally, so all of the above work uniformly.
 template <typename T, typename Key, typename key_func_t>
-class keyed_vector
+class keyed_vector final
 {
 public:
     using container_type  = std::vector<T>;
@@ -170,10 +170,7 @@ public:
     container_type &as_vec() noexcept { return m_items; }
     const container_type &as_vec() const noexcept { return m_items; }
 
-protected:
-    auto &items()       noexcept { return m_items; }
-    const auto &items() const noexcept { return m_items; }
-
+private:
     std::size_t find_idx(key_type key) const
     {
         for(std::size_t u = 0; u != m_items.size(); ++u)
