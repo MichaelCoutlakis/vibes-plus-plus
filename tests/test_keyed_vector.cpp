@@ -240,7 +240,7 @@ TEST(keyed_vector, FunctorKeyFunc)
 }
 
 // ---------------------------------------------------------------------------
-// CTAD deduction guide
+// CTAD deduction guides
 // ---------------------------------------------------------------------------
 
 TEST(keyed_vector, CTADFromFreeFunctionPointer)
@@ -248,4 +248,30 @@ TEST(keyed_vector, CTADFromFreeFunctionPointer)
     vpp::keyed_vector kv{&widget_id};
     static_assert(std::is_same_v<decltype(kv), vpp::keyed_vector<widget, int, int(*)(const widget&)>>);
     EXPECT_TRUE(kv.insert({1, "one"}).second);
+}
+
+TEST(keyed_vector, CTADFromPointerToDataMember)
+{
+    vpp::keyed_vector kv{&widget::id};
+    static_assert(std::is_same_v<decltype(kv), vpp::keyed_vector<widget, int, int widget::*>>);
+    EXPECT_TRUE(kv.insert({5, "five"}).second);
+    EXPECT_TRUE(kv.contains(5));
+    EXPECT_EQ(kv.at(5).name, "five");
+}
+
+// ---------------------------------------------------------------------------
+// pointer-to-member-function as key
+// ---------------------------------------------------------------------------
+
+TEST(keyed_vector, PointerToMemberFunction)
+{
+    struct named {
+        int         id;
+        std::string label;
+        int get_id() const { return id; }
+    };
+    vpp::keyed_vector kv{&named::get_id};
+    static_assert(std::is_same_v<decltype(kv), vpp::keyed_vector<named, int, int(named::*)() const>>);
+    EXPECT_TRUE(kv.insert({3, "three"}).second);
+    EXPECT_TRUE(kv.contains(3));
 }

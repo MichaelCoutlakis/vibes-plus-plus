@@ -5,6 +5,7 @@
 #pragma once
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -19,9 +20,12 @@ namespace vpp
 // Lookup is O(n); suited for small collections where stable insertion order
 // and contiguous storage matter more than lookup speed.
 //
-// key_func must be callable as: Key(const T&)
-// For stateless functors and free functions it may be default-constructed;
-// for lambdas, pass the instance to the constructor.
+// key_func_t may be any callable that extracts a Key from a const T&:
+//   - free function pointer:      &my_free_fn
+//   - pointer to data member:     &my_struct::member
+//   - pointer to member function: &my_struct::getter  (Key() const)
+//   - lambda or functor:          pass instance to constructor
+// std::invoke is used internally, so all of the above work uniformly.
 template <typename T, typename Key, typename key_func_t>
 class keyed_vector
 {
@@ -58,7 +62,7 @@ public:
     //         {iterator-to-existing, false} on duplicate.
     std::pair<iterator, bool> insert(T t)
     {
-        auto k = find_idx(m_key_func(t));
+        auto k = find_idx(std::invoke(m_key_func,t));
         if(k != npos)
             return {m_items.begin() + k, false};
         m_items.push_back(std::move(t));
@@ -70,7 +74,7 @@ public:
     //         {iterator-to-element, false} on assignment.
     std::pair<iterator, bool> insert_or_assign(T t)
     {
-        auto k = find_idx(m_key_func(t));
+        auto k = find_idx(std::invoke(m_key_func,t));
         if(k != npos)
         {
             m_items[k] = std::move(t);
@@ -161,7 +165,7 @@ protected:
     std::size_t find_idx(key_type key) const
     {
         for(std::size_t u = 0; u != m_items.size(); ++u)
-            if(m_key_func(m_items[u]) == key)
+            if(std::invoke(m_key_func,m_items[u]) == key)
                 return u;
         return npos;
     }
@@ -172,8 +176,16 @@ private:
     static constexpr std::size_t npos{std::numeric_limits<std::size_t>::max()};
 };
 
-// Deduction guide: keyed_vector kv(&get_key);
+// Deduction guides
 template <typename T, typename Key>
 keyed_vector(Key (*)(const T &)) -> keyed_vector<T, Key, Key (*)(const T &)>;
+
+// Pointer to data member: &my_struct::member
+template <typename T, typename Key>
+keyed_vector(Key T::*) -> keyed_vector<T, Key, Key T::*>;
+
+// Pointer to const member function (no args): &my_struct::getter
+template <typename T, typename Key>
+keyed_vector(Key (T::*)() const) -> keyed_vector<T, Key, Key (T::*)() const>;
 
 } // namespace vpp

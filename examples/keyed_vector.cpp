@@ -17,7 +17,8 @@ static std::string plugin_id(const plugin &p) { return p.id; }
 
 int main()
 {
-    vpp::keyed_vector kv{&plugin_id};
+    // Pointer-to-data-member — no free function needed
+    vpp::keyed_vector kv{&plugin::id};
 
     kv.insert({"audio",   "Audio processing plugin"});
     kv.insert({"video",   "Video rendering plugin"});
