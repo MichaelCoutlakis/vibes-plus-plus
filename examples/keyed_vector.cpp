@@ -2,10 +2,10 @@
  * SPDX-License-Identifier: MIT
  * SPDX-FileCopyrightText: 2026 Michael Coutlakis
  *****************************************************************************/
-#include <vpp/keyed_vector.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vpp/keyed_vector.hpp>
 
 struct plugin
 {
@@ -21,8 +21,8 @@ int main()
 {
     // Initializer list construction
     plugin_registry reg{
-        {"audio",   "Audio processing plugin"},
-        {"video",   "Video rendering plugin"},
+        {"audio", "Audio processing plugin"},
+        {"video", "Video rendering plugin"},
         {"network", "Network transport plugin"},
     };
 

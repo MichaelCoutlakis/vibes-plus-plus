@@ -10,3 +10,4 @@ CMakeUserPresets.json
 .vs
 *.bat
 compile_commands.json
+*.bak
