@@ -6,9 +6,11 @@
 #include <cassert>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -16,29 +18,44 @@ namespace vpp
 {
 
 // Insertion-ordered container that stores elements of type T in contiguous
-// memory and provides keyed lookup via a caller-supplied callable (key_func).
+// memory and provides keyed lookup via a compile-time key accessor (KeyFn).
 // Lookup is O(n); suited for small collections where stable insertion order
 // and contiguous storage matter more than lookup speed.
 //
-// key_func_t may be any callable that extracts a Key from a const T&:
-//   - free function pointer:      &my_free_fn
-//   - pointer to data member:     &my_struct::member
-//   - pointer to member function: &my_struct::getter  (Key() const)
-//   - lambda or functor:          pass instance to constructor
-// std::invoke is used internally, so all of the above work uniformly.
-template <typename T, typename Key, typename key_func_t>
+// KeyFn is a non-type template parameter and may be:
+//   - a free function pointer:       &my_free_fn          Key(const T&)
+//   - a pointer to data member:      &my_struct::member
+//   - a pointer to member function:  &my_struct::getter   Key() const
+//
+// Key is deduced from KeyFn via std::invoke_result but may be overridden
+// explicitly as a third template argument.
+//
+// Because KeyFn is a compile-time constant, lambdas and stateful functors
+// are not supported (C++17 restriction on non-type template parameters).
+//
+// Typical usage via a type alias:
+//   using my_container = vpp::keyed_vector<my_data, &my_data::id>;
+template <
+    typename T,
+    auto KeyFn,
+    typename Key = std::decay_t<std::invoke_result_t<decltype(KeyFn), const T &>>>
 class keyed_vector final
 {
 public:
-    using container_type  = std::vector<T>;
-    using iterator        = typename container_type::iterator;
-    using const_iterator  = typename container_type::const_iterator;
-    using key_type        = Key;
+    using container_type = std::vector<T>;
+    using iterator       = typename container_type::iterator;
+    using const_iterator = typename container_type::const_iterator;
+    using key_type       = Key;
 
     keyed_vector() = default;
-    explicit keyed_vector(key_func_t kf) :
-        m_key_func(std::move(kf))
+
+    // Constructs from an initializer list. Duplicate keys are ignored (first
+    // occurrence wins), consistent with insert() semantics.
+    keyed_vector(std::initializer_list<T> il)
     {
+        m_items.reserve(il.size());
+        for(const auto &t : il)
+            insert(t);
     }
 
     // ---- iterators / capacity ----
@@ -62,7 +79,7 @@ public:
     //         {iterator-to-existing, false} on duplicate.
     std::pair<iterator, bool> insert(T t)
     {
-        auto k = find_idx(std::invoke(m_key_func,t));
+        auto k = find_idx(std::invoke(KeyFn, t));
         if(k != npos)
             return {m_items.begin() + k, false};
         m_items.push_back(std::move(t));
@@ -72,9 +89,10 @@ public:
     // Inserts t if its key is absent; overwrites the existing element if present.
     // Returns {iterator-to-element, true} on insertion,
     //         {iterator-to-element, false} on assignment.
+    // Position in insertion order is preserved on assignment.
     std::pair<iterator, bool> insert_or_assign(T t)
     {
-        auto k = find_idx(std::invoke(m_key_func,t));
+        auto k = find_idx(std::invoke(KeyFn, t));
         if(k != npos)
         {
             m_items[k] = std::move(t);
@@ -174,27 +192,13 @@ private:
     std::size_t find_idx(key_type key) const
     {
         for(std::size_t u = 0; u != m_items.size(); ++u)
-            if(std::invoke(m_key_func,m_items[u]) == key)
+            if(std::invoke(KeyFn, m_items[u]) == key)
                 return u;
         return npos;
     }
 
-private:
     container_type m_items;
-    key_func_t     m_key_func{};
     static constexpr std::size_t npos{std::numeric_limits<std::size_t>::max()};
 };
-
-// Deduction guides
-template <typename T, typename Key>
-keyed_vector(Key (*)(const T &)) -> keyed_vector<T, Key, Key (*)(const T &)>;
-
-// Pointer to data member: &my_struct::member
-template <typename T, typename Key>
-keyed_vector(Key T::*) -> keyed_vector<T, Key, Key T::*>;
-
-// Pointer to const member function (no args): &my_struct::getter
-template <typename T, typename Key>
-keyed_vector(Key (T::*)() const) -> keyed_vector<T, Key, Key (T::*)() const>;
 
 } // namespace vpp

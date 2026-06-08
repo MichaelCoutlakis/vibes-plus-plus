@@ -8,9 +8,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- `keyed_vector<T, Key, key_func_t>`: insertion-ordered container with keyed lookup
-  - `key_func_t` is a type template parameter accepting any callable `Key(const T&)` — free functions, functors, and lambdas all work
-  - CTAD deduction guide for free-function pointer construction
+- `keyed_vector<T, KeyFn, Key>`: insertion-ordered container with keyed lookup
+  - `KeyFn` is a non-type template parameter (free-function pointer, pointer-to-data-member, pointer-to-const-member-function); `Key` is deduced automatically
+  - Idiomatic usage via type alias: `using my_container = vpp::keyed_vector<my_data, &my_data::id>;`
+  - Initializer list constructor (first occurrence wins on duplicate keys)
   - `insert` (returns `std::pair<iterator, bool>`), `insert_or_assign`, `erase` (by key and by pointer), `clear`
   - `operator[]` (unchecked, asserts in debug), `at(key)` (throws `std::out_of_range`)
   - `find`, `find_ptr`, `contains`

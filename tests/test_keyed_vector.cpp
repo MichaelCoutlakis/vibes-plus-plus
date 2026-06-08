@@ -15,13 +15,14 @@ struct widget {
     std::string name;
 };
 
-static int widget_id(const widget& w) { return w.id; }
+static int widget_id(const widget &w) { return w.id; }
 
-using widget_kv = vpp::keyed_vector<widget, int, int (*)(const widget&)>;
+// Type alias — the primary intended usage pattern
+using widget_kv = vpp::keyed_vector<widget, &widget_id>;
 
 static widget_kv make_kv()
 {
-    return widget_kv{&widget_id};
+    return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,35 @@ TEST(keyed_vector, InsertDuplicateReturnsFalseAndExistingIterator)
     EXPECT_FALSE(inserted);
     EXPECT_EQ(it->name, "first");   // existing element, not overwritten
     EXPECT_EQ(kv.size(), 1u);
+}
+
+// ---------------------------------------------------------------------------
+// initializer_list constructor
+// ---------------------------------------------------------------------------
+
+TEST(keyed_vector, InitializerListConstructor)
+{
+    widget_kv kv{{1, "one"}, {2, "two"}, {3, "three"}};
+    EXPECT_EQ(kv.size(), 3u);
+    EXPECT_EQ(kv.at(1).name, "one");
+    EXPECT_EQ(kv.at(2).name, "two");
+    EXPECT_EQ(kv.at(3).name, "three");
+}
+
+TEST(keyed_vector, InitializerListFirstWinsOnDuplicate)
+{
+    widget_kv kv{{1, "first"}, {1, "second"}};
+    EXPECT_EQ(kv.size(), 1u);
+    EXPECT_EQ(kv.at(1).name, "first");
+}
+
+TEST(keyed_vector, InitializerListPreservesOrder)
+{
+    widget_kv kv{{5, ""}, {3, ""}, {8, ""}, {1, ""}};
+    std::vector<int> order;
+    for(const auto &w : kv)
+        order.push_back(w.id);
+    EXPECT_EQ(order, (std::vector<int>{5, 3, 8, 1}));
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +110,7 @@ TEST(keyed_vector, InsertOrAssignPreservesOrder)
     kv.insert({3, "three"});
     kv.insert_or_assign({2, "TWO"});
     std::vector<int> order;
-    for(const auto& w : kv)
+    for(const auto &w : kv)
         order.push_back(w.id);
     EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
     EXPECT_EQ(kv.at(2).name, "TWO");
@@ -101,7 +131,7 @@ TEST(keyed_vector, FindPtrReturnsCorrectElement)
 {
     auto kv = make_kv();
     kv.insert({7, "seven"});
-    const widget* p = kv.find_ptr(7);
+    const widget *p = kv.find_ptr(7);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(p->name, "seven");
 }
@@ -141,7 +171,7 @@ TEST(keyed_vector, AtKeyConstOverload)
 {
     auto kv = make_kv();
     kv.insert({5, "five"});
-    const auto& ckv = kv;
+    const auto &ckv = kv;
     EXPECT_EQ(ckv.at(5).name, "five");
     EXPECT_THROW(ckv.at(99), std::out_of_range);
 }
@@ -178,7 +208,7 @@ TEST(keyed_vector, EraseByPtrRemovesElement)
     auto kv = make_kv();
     kv.insert({1, "a"});
     kv.insert({2, "b"});
-    widget* p = kv.find_ptr(1);
+    widget *p = kv.find_ptr(1);
     ASSERT_NE(p, nullptr);
     kv.erase(p);
     EXPECT_EQ(kv.size(), 1u);
@@ -218,7 +248,7 @@ TEST(keyed_vector, InsertionOrderPreserved)
         kv.insert({i, ""});
 
     std::vector<int> order;
-    for(const auto& w : kv)
+    for(const auto &w : kv)
         order.push_back(w.id);
 
     EXPECT_EQ(order, (std::vector<int>{5, 3, 8, 1}));
@@ -243,47 +273,25 @@ TEST(keyed_vector, AsVecConstOverload)
 {
     auto kv = make_kv();
     kv.insert({5, "five"});
-    const auto& ckv = kv;
+    const auto &ckv = kv;
     EXPECT_EQ(ckv.as_vec()[0].name, "five");
 }
 
 // ---------------------------------------------------------------------------
-// functor key_func (not just free-function pointer)
+// pointer-to-data-member as KeyFn (via type alias)
 // ---------------------------------------------------------------------------
 
-TEST(keyed_vector, FunctorKeyFunc)
+TEST(keyed_vector, PointerToDataMember)
 {
-    struct get_id {
-        int operator()(const widget& w) const { return w.id; }
-    };
-    vpp::keyed_vector<widget, int, get_id> kv;
-    EXPECT_TRUE(kv.insert({7, "seven"}).second);
-    EXPECT_TRUE(kv.contains(7));
+    using widget_by_id = vpp::keyed_vector<widget, &widget::id>;
+    static_assert(std::is_same_v<widget_by_id::key_type, int>);
+    widget_by_id kv{{5, "five"}, {7, "seven"}};
+    EXPECT_TRUE(kv.contains(5));
     EXPECT_EQ(kv.at(7).name, "seven");
 }
 
 // ---------------------------------------------------------------------------
-// CTAD deduction guides
-// ---------------------------------------------------------------------------
-
-TEST(keyed_vector, CTADFromFreeFunctionPointer)
-{
-    vpp::keyed_vector kv{&widget_id};
-    static_assert(std::is_same_v<decltype(kv), vpp::keyed_vector<widget, int, int(*)(const widget&)>>);
-    EXPECT_TRUE(kv.insert({1, "one"}).second);
-}
-
-TEST(keyed_vector, CTADFromPointerToDataMember)
-{
-    vpp::keyed_vector kv{&widget::id};
-    static_assert(std::is_same_v<decltype(kv), vpp::keyed_vector<widget, int, int widget::*>>);
-    EXPECT_TRUE(kv.insert({5, "five"}).second);
-    EXPECT_TRUE(kv.contains(5));
-    EXPECT_EQ(kv.at(5).name, "five");
-}
-
-// ---------------------------------------------------------------------------
-// pointer-to-member-function as key
+// pointer-to-member-function as KeyFn
 // ---------------------------------------------------------------------------
 
 TEST(keyed_vector, PointerToMemberFunction)
@@ -293,8 +301,23 @@ TEST(keyed_vector, PointerToMemberFunction)
         std::string label;
         int get_id() const { return id; }
     };
-    vpp::keyed_vector kv{&named::get_id};
-    static_assert(std::is_same_v<decltype(kv), vpp::keyed_vector<named, int, int(named::*)() const>>);
+    using named_kv = vpp::keyed_vector<named, &named::get_id>;
+    static_assert(std::is_same_v<named_kv::key_type, int>);
+    named_kv kv;
     EXPECT_TRUE(kv.insert({3, "three"}).second);
     EXPECT_TRUE(kv.contains(3));
+}
+
+// ---------------------------------------------------------------------------
+// free function as KeyFn (via type alias)
+// ---------------------------------------------------------------------------
+
+TEST(keyed_vector, FreeFunctionKeyFn)
+{
+    // widget_kv is already defined at the top using &widget_id — this test
+    // just confirms the free-function path still works with the new syntax.
+    static_assert(std::is_same_v<widget_kv::key_type, int>);
+    widget_kv kv{{1, "one"}, {2, "two"}};
+    EXPECT_EQ(kv.size(), 2u);
+    EXPECT_EQ(kv.at(1).name, "one");
 }

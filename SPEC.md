@@ -87,15 +87,15 @@ An insertion-ordered container that stores elements of type `T` in contiguous me
 | Parameter | Description |
 |-----------|-------------|
 | `T` | Element type |
-| `Key` | Key type; must be equality-comparable |
-| `key_func_t` | Callable: `Key(const T&)`. May be a free-function pointer, a stateless functor, or a lambda. |
+| `KeyFn` | Compile-time key accessor (non-type template parameter). May be a free-function pointer, pointer to data member, or pointer to const member function. |
+| `Key` | Key type; deduced from `KeyFn` via `std::invoke_result` — override only when needed. Must be equality-comparable. |
 
-Stateless functors are default-constructed inside the container. For lambdas (which are not default-constructible in C++17), pass the instance to the constructor.
+Because `KeyFn` is a non-type template parameter, lambdas and stateful functors are not supported (C++17 restriction).
 
-A CTAD deduction guide is provided for the common case of a free-function pointer:
+The idiomatic usage is a type alias:
 
 ```cpp
-vpp::keyed_vector kv{&get_my_key};
+using my_container = vpp::keyed_vector<my_data, &my_data::id>;
 ```
 
 #### Invariants
@@ -108,6 +108,7 @@ vpp::keyed_vector kv{&get_my_key};
 
 | Expression | Description |
 |-----------|-------------|
+| `keyed_vector{a, b, ...}` | Construct from initializer list; duplicate keys are silently ignored (first wins). |
 | `kv.insert(t)` | Insert element; returns `{iterator, true}` on insertion, `{iterator-to-existing, false}` on duplicate. |
 | `kv.insert_or_assign(t)` | Insert or overwrite; returns `{iterator, true}` on insertion, `{iterator, false}` on assignment. Position in insertion order is preserved on assignment. |
 | `kv.erase(key)` | Remove by key; no-op on miss. |
