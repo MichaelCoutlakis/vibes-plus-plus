@@ -11,3 +11,4 @@ CMakeUserPresets.json
 *.bat
 compile_commands.json
 *.bak
+*.zip
