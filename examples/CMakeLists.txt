@@ -7,3 +7,4 @@ endfunction()
 
 vpp_example(keyed_vector)
 vpp_example(ola_frame_buffer)
+vpp_example(functional)
