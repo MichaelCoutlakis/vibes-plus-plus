@@ -21,16 +21,16 @@ int main()
 
     auto do_process = [](const my_ola::process_context &ctx)
     {
-        std::vector<int> v(ctx.input, ctx.input + ctx.num_input_samples());
+        std::vector<int> v(ctx.data_in(), ctx.data_in() + ctx.num_in_samples());
         fmt::print(" Process block with input: {}\n", fmt::join(v, ", "));
         // Sum all channels framewise to output:
-        for(size_t frame = 0U; frame != ctx.block_size; ++frame)
-            for(size_t channel = 0U; channel != ctx.num_in_channels; ++channel)
-                ctx.scratch[frame] += ctx.in(frame, channel);
+        for(size_t frame = 0U; frame != ctx.num_frames(); ++frame)
+            for(size_t channel = 0U; channel != ctx.num_in_channels(); ++channel)
+                ctx.at_out(frame, 0) += ctx.at_in(frame, channel);
     };
     auto do_output = [](const my_ola::output_context &ctx)
     {
-        std::vector<int> v(ctx.output, ctx.output + ctx.num_samples());
+        std::vector<int> v(ctx.data(), ctx.data() + ctx.num_samples());
         fmt::print("Process output block: {}\n", fmt::join(v, ", "));
     };
 

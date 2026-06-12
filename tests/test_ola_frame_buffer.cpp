@@ -10,16 +10,17 @@
 
 using namespace testing;
 using buf_t = vpp::ola_frame_buffer<float>;
+using buf_planar = vpp::ola_frame_buffer<float, vpp::ola_layout::channel_wise>;
 
-static void passthrough(const buf_t::process_context &ctx)
-{
-    std::memcpy(ctx.scratch, ctx.input, ctx.block_size * ctx.num_in_channels * sizeof(float));
-}
+// Generic so it converts to either layout's process_fn_t. Copies the whole
+// block bytewise, which is layout-agnostic (in/out share the same ordering).
+static const auto passthrough = [](const auto &ctx)
+{ std::memcpy(ctx.data_out(), ctx.data_in(), ctx.num_in_samples() * sizeof(float)); };
 
 static auto make_collector(std::vector<float> &out)
 {
-    return [&out](const buf_t::output_context &ctx)
-    { out.insert(out.end(), ctx.output, ctx.output + ctx.num_frames * ctx.num_out_channels); };
+    return [&out](const auto &ctx)
+    { out.insert(out.end(), ctx.data(), ctx.data() + ctx.num_samples()); };
 }
 
 // ---------------------------------------------------------------------------
@@ -112,11 +113,16 @@ TEST(ola_frame_buffer, ContextAccessorsApplyGain)
     // 2 channels, block=4, hop=4 (no overlap) so output == input * gain.
     constexpr float gain = 3.0f;
     std::vector<float> out;
-    buf_t buf(4, 4, 2, 2,
-        [](const buf_t::process_context &ctx) {
-            for(std::size_t f = 0; f < ctx.block_size; ++f)
-                for(std::size_t ch = 0; ch < ctx.num_out_channels; ++ch)
-                    ctx.out(f, ch) = ctx.in(f, ch) * gain;
+    buf_t buf(
+        4,
+        4,
+        2,
+        2,
+        [](const buf_t::process_context &ctx)
+        {
+            for(std::size_t f = 0; f < ctx.num_frames(); ++f)
+                for(std::size_t ch = 0; ch < ctx.num_out_channels(); ++ch)
+                    ctx.at_out(f, ch) = ctx.at_in(f, ch) * gain;
         },
         make_collector(out));
 
@@ -127,4 +133,57 @@ TEST(ola_frame_buffer, ContextAccessorsApplyGain)
     for(float v : in)
         expected.push_back(v * gain);
     EXPECT_THAT(out, Pointwise(FloatEq(), expected));
+}
+
+// ---------------------------------------------------------------------------
+// planar (channel_wise) layout
+// ---------------------------------------------------------------------------
+
+TEST(ola_frame_buffer, PlanarPassthroughNoOverlap)
+{
+    // 2 channels, block=4, hop=4. Planar input: [c0:0..3][c1:0..3]. Passthrough
+    // preserves planar layout, so output matches input exactly.
+    std::vector<float> out;
+    buf_planar buf(4, 4, 2, 2, passthrough, make_collector(out));
+    std::vector<float> in = {1, 2, 3, 4, 5, 6, 7, 8};
+    buf.push(in.data(), 4);
+    EXPECT_THAT(out, Pointwise(FloatEq(), in));
+}
+
+TEST(ola_frame_buffer, PlanarAccessorsApplyGain)
+{
+    // The (frame, channel) accessors hide the planar stride. block=4, hop=4.
+    constexpr float gain = 2.0f;
+    std::vector<float> out;
+    buf_planar buf(
+        4,
+        4,
+        2,
+        2,
+        [](const buf_planar::process_context &ctx)
+        {
+            for(std::size_t f = 0; f < ctx.num_frames(); ++f)
+                for(std::size_t ch = 0; ch < ctx.num_out_channels(); ++ch)
+                    ctx.at_out(f, ch) = ctx.at_in(f, ch) * gain;
+        },
+        make_collector(out));
+
+    std::vector<float> in = {1, 2, 3, 4, 5, 6, 7, 8}; // planar, 2ch x 4 frames
+    buf.push(in.data(), 4);
+
+    std::vector<float> expected;
+    for(float v : in)
+        expected.push_back(v * gain);
+    EXPECT_THAT(out, Pointwise(FloatEq(), expected));
+}
+
+TEST(ola_frame_buffer, PlanarOverlapScales)
+{
+    // block=4, hop=2, 2 channels, planar. Steady-state OLA scales by 2.
+    std::vector<float> out;
+    buf_planar buf(4, 2, 2, 2, passthrough, make_collector(out));
+    std::vector<float> in(2 * 16, 1.0f); // 2 channels x 16 frames, planar
+    buf.push(in.data(), 16);
+    // Skip the first hop per channel (ramp-up = 2 frames x 2 ch = 4 samples).
+    EXPECT_THAT(std::vector<float>(out.begin() + 4, out.end()), Each(FloatEq(2.0f)));
 }
