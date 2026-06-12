@@ -13,37 +13,33 @@
 namespace vpp
 {
 
-// Element ordering of the input/output sample buffers. The interleaved/planar
-// and frame_wise/channel_wise spellings are aliases for the same two layouts.
+/// Element ordering of the input/output sample buffers.
 enum class ola_layout
 {
-    interleaved, // frame-wise / WAV order: s0c0, s0c1, s1c0, ...
+    interleaved, ///< frame-wise / WAV order: s0c0, s0c1, s1c0, ...
     frame_wise = interleaved,
-    planar, // channel-wise: c0s0, c0s1, ..., c1s0, ...
+    planar, ///< channel-wise: c0s0, c0s1, ..., c1s0, ...
     channel_wise = planar,
 };
 
-// Frames a continuous push-based stream into overlapping blocks for use in
-// overlap-add (OLA) DSP pipelines (e.g. STFT processing).
-//
-// Two callbacks are invoked by the buffer:
-//
-//   process_fn  — called when a full input block is ready. Receives a
-//                 process_context exposing the input block and a zeroed scratch
-//                 output block to write results into. The buffer accumulates
-//                 scratch into the OLA output buffer after the callback returns.
-//
-//   output_fn   — called when one hop's worth of accumulated output is ready.
-//                 Receives an output_context exposing the output hop.
-//                 num_frames() == hop_size, except on the final flush() drain.
-//
-// Layout: the Layout template parameter selects interleaved (frame-wise, WAV
-// order) or planar (channel-wise) ordering. It applies uniformly to the input
-// stream passed to push(), the buffers exposed by the contexts, and the output
-// hop. The at_*() element accessors and the data_*() pointers all honour it.
-//
-// All memory is allocated at construction; push() and flush() are zero-alloc.
-// Not thread-safe; the caller is responsible for synchronisation if needed.
+/// Frames a continuous push-based stream into overlapping blocks for
+/// overlap-add (OLA) DSP pipelines such as STFT processing.
+///
+/// Two callbacks drive the buffer. `process_fn` is called when a full input
+/// block is ready, receiving a process_context that exposes the input block and
+/// a zeroed output block to write results into; the buffer overlap-adds that
+/// output into its accumulation buffer after the callback returns. `output_fn`
+/// is called when one hop of accumulated output is ready, receiving an
+/// output_context (`num_frames() == hop_size`, except on the final flush() drain).
+///
+/// All working storage is allocated at construction; push() and flush() are
+/// zero-alloc. Not thread-safe; the caller synchronises if needed.
+///
+/// @tparam T       Sample type; must support `+=` and value-initialisation.
+/// @tparam Layout  Element ordering of every sample buffer (see ola_layout).
+///                 Applies uniformly to the push() stream, the context buffers,
+///                 and the emitted hop; the at_*() accessors and data_*()
+///                 pointers all honour it.
 template <typename T = float, ola_layout Layout = ola_layout::interleaved>
 class ola_frame_buffer final
 {
@@ -52,25 +48,24 @@ public:
     {
         process_context(
             const T *input,
-            T *scratch,
+            T *output,
             std::size_t num_frames,
             std::size_t num_in_channels,
             std::size_t num_out_channels) noexcept :
             m_input(input),
-            m_scratch(scratch),
+            m_output(output),
             m_num_frames(num_frames),
             m_num_in_ch(num_in_channels),
             m_num_out_ch(num_out_channels)
         {
         }
 
-        // Raw pointer to the input block. The element order (interleaved
-        // frame-wise vs planar channel-wise) follows the Layout parameter.
+        /// Pointer to the input block; element order follows the Layout parameter.
         const T *data_in() const noexcept { return m_input; }
 
-        // Raw pointer to the zeroed scratch output block to write results into.
-        // Same layout rules as data_in().
-        T *data_out() const noexcept { return m_scratch; }
+        /// Pointer to the zeroed output block to write results into; same layout
+        /// as data_in().
+        T *data_out() const noexcept { return m_output; }
 
         std::size_t num_frames() const noexcept { return m_num_frames; }
         std::size_t num_in_channels() const noexcept { return m_num_in_ch; }
@@ -78,7 +73,7 @@ public:
         std::size_t num_in_samples() const noexcept { return m_num_frames * m_num_in_ch; }
         std::size_t num_out_samples() const noexcept { return m_num_frames * m_num_out_ch; }
 
-        // (frame, channel) element access into the input block. Layout-aware.
+        /// (frame, channel) element access into the input block; honours the layout.
         const T &at_in(std::size_t frame, std::size_t ch) const noexcept
         {
             assert(frame < m_num_frames && ch < m_num_in_ch);
@@ -88,21 +83,24 @@ public:
                 return m_input[ch * m_num_frames + frame];
         }
 
-        // (frame, channel) element access into the scratch output block.
-        // const because the context is delivered by const&; m_scratch is a
-        // non-const pointer, so writing through it remains well-formed.
+        /// Mutable (frame, channel) element access into the output block; honours
+        /// the layout.
+        ///
+        /// @note `const` because the context is delivered by `const&`; the output
+        ///       pointer is non-const, so writing through the returned reference
+        ///       is well-formed.
         T &at_out(std::size_t frame, std::size_t ch) const noexcept
         {
             assert(frame < m_num_frames && ch < m_num_out_ch);
             if constexpr(Layout == ola_layout::interleaved)
-                return m_scratch[frame * m_num_out_ch + ch];
+                return m_output[frame * m_num_out_ch + ch];
             else
-                return m_scratch[ch * m_num_frames + frame];
+                return m_output[ch * m_num_frames + frame];
         }
 
     private:
         const T *m_input;
-        T *m_scratch;
+        T *m_output;
         std::size_t m_num_frames;
         std::size_t m_num_in_ch;
         std::size_t m_num_out_ch;
@@ -120,15 +118,14 @@ public:
         {
         }
 
-        // Raw pointer to the output hop. The element order (interleaved
-        // frame-wise vs planar channel-wise) follows the Layout parameter.
+        /// Pointer to the output hop; element order follows the Layout parameter.
         const T *data() const noexcept { return m_output; }
 
         std::size_t num_frames() const noexcept { return m_num_frames; }
         std::size_t num_out_channels() const noexcept { return m_num_out_ch; }
         std::size_t num_samples() const noexcept { return m_num_frames * m_num_out_ch; }
 
-        // (frame, channel) element access into the output hop. Layout-aware.
+        /// (frame, channel) element access into the output hop; honours the layout.
         const T &at(std::size_t frame, std::size_t ch) const noexcept
         {
             assert(frame < m_num_frames && ch < m_num_out_ch);
@@ -147,13 +144,13 @@ public:
     using process_fn_t = std::function<void(const process_context &)>;
     using output_fn_t = std::function<void(const output_context &)>;
 
-    // frame_size       : number of frames per analysis block (the FFT size).
-    // hop_size         : number of frames between successive blocks.
-    //                    Must satisfy 0 < hop_size <= frame_size.
-    // num_in_channels  : number of channels in the input stream.
-    // num_out_channels : number of channels in the output stream.
-    // process_fn       : called with each completed input block + scratch buffer.
-    // output_fn        : called when each hop of output is ready to consume.
+    /// Construct and pre-allocate all working storage.
+    ///
+    /// `frame_size` is the analysis block length (the FFT size) and `hop_size`
+    /// the stride between successive blocks, both counted in frames.
+    ///
+    /// @pre `0 < hop_size <= frame_size`
+    /// @pre `num_in_channels > 0 && num_out_channels > 0`
     ola_frame_buffer(
         std::size_t frame_size,
         std::size_t hop_size,
@@ -168,7 +165,7 @@ public:
         m_process_fn(std::move(process_fn)),
         m_output_fn(std::move(output_fn)),
         m_input_buf(frame_size * num_in_channels, T{}),
-        m_scratch_buf(frame_size * num_out_channels, T{}),
+        m_output_buf(frame_size * num_out_channels, T{}),
         m_ola_buf(frame_size * num_out_channels, T{}),
         m_hop_buf(Layout == ola_layout::planar ? hop_size * num_out_channels : 0, T{}),
         m_frames_in_buf(0)
@@ -178,11 +175,12 @@ public:
         assert(num_out_channels > 0);
     }
 
-    // Push num_frames frames (in the configured layout) into the buffer. Data
-    // is handled a whole frame at a time: `frames` must address
-    // num_frames * num_in_channels samples; partial frames are not representable.
-    // Fires process_fn and output_fn internally as blocks/hops complete.
-    // Does not allocate.
+    /// Append `num_frames` frames (in the configured layout), firing the
+    /// callbacks as blocks and hops complete. Does not allocate.
+    ///
+    /// Data is handled a whole frame at a time; partial frames are not
+    /// representable.
+    /// @pre `frames` addresses at least `num_frames * num_in_channels()` samples.
     void push(const T *frames, std::size_t num_frames)
     {
         for(std::size_t offset = 0; offset < num_frames;)
@@ -208,9 +206,11 @@ public:
         }
     }
 
-    // Flushes any buffered input by zero-padding to a full block, then drains
-    // any remaining accumulated output. Call once at end-of-stream.
-    // Apply analysis/synthesis windows inside process_fn if needed.
+    /// Zero-pad any buffered partial block, process it, then reset the
+    /// accumulation buffer. Call once at end-of-stream.
+    ///
+    /// @note The buffer applies no windowing of its own; apply any
+    ///       analysis/synthesis window inside process_fn.
     void flush()
     {
         if(m_frames_in_buf > 0)
@@ -316,21 +316,21 @@ private:
 
     void process_block()
     {
-        std::fill(m_scratch_buf.begin(), m_scratch_buf.end(), T{});
+        std::fill(m_output_buf.begin(), m_output_buf.end(), T{});
 
         m_process_fn(
             process_context{
                 m_input_buf.data(),
-                m_scratch_buf.data(),
+                m_output_buf.data(),
                 m_frame_size,
                 m_num_in_ch,
                 m_num_out_ch
             });
 
-        // Accumulate scratch into the OLA buffer (layout-agnostic, same dims).
+        // Accumulate the output block into the OLA buffer (same dims, layout-agnostic).
         const std::size_t ola_samples = m_frame_size * m_num_out_ch;
         for(std::size_t i = 0; i < ola_samples; ++i)
-            m_ola_buf[i] += m_scratch_buf[i];
+            m_ola_buf[i] += m_output_buf[i];
 
         // Emit only the front hop — it is the only region guaranteed to have
         // received all of its OLA contributions. Positions beyond hop_size may
@@ -374,9 +374,9 @@ private:
     output_fn_t m_output_fn;
 
     std::vector<T> m_input_buf;
-    std::vector<T> m_scratch_buf;
+    std::vector<T> m_output_buf;
     std::vector<T> m_ola_buf;
-    std::vector<T> m_hop_buf; // planar compaction scratch; empty when interleaved
+    std::vector<T> m_hop_buf; // planar compaction buffer; empty when interleaved
 
     std::size_t m_frames_in_buf{0};
 };

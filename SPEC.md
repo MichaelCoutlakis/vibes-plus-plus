@@ -12,6 +12,21 @@
 - Exception: `TEST(Suite, CaseName)` GTest macros use `PascalCase` for the case name per GTest convention.
 - Formatting is governed by `.clang-format`; static analysis by `.clang-tidy`.
 
+### Documentation
+
+- Document the public API with Doxygen comments, but **only where the comment adds
+  information the code does not already convey.** Do not restate the obvious — a
+  comment such as "`begin()`: returns an iterator to the first element" earns its
+  place nowhere.
+- Use `///` comment blocks and `@`-style tags (not `\`).
+- Omit `@brief`; rely on the autobrief convention where the first sentence is the
+  brief (`JAVADOC_AUTOBRIEF`). Likewise omit `@param`/`@return` when the name and
+  signature already make the meaning plain.
+- Prefer tags that capture what the signature cannot: `@tparam` for template
+  parameter intent, `@pre` for preconditions (mirroring `assert`s), and
+  `@note`/`@warning` for non-obvious caveats. Add `@param`/`@return` only when the
+  meaning is genuinely non-obvious from the name.
+
 ## Project Requirements
 
 - The library shall support C++ >= 17 on GCC, Clang, and MSVC.
@@ -88,3 +103,4 @@ Each component has its own specification under [`specs/`](specs):
 |-----------|--------|---------------|
 | `keyed_vector` | `<vpp/keyed_vector.hpp>` | [specs/keyed_vector.md](specs/keyed_vector.md) |
 | `ola_frame_buffer` | `<vpp/ola_frame_buffer.hpp>` | [specs/ola_frame_buffer.md](specs/ola_frame_buffer.md) |
+| `functional` | `<vpp/functional.hpp>` | [specs/functional.md](specs/functional.md) |
