@@ -44,10 +44,14 @@ vibes-plus-plus/
     vpp/
       keyed_vector.hpp
       ola_frame_buffer.hpp
+      functional.hpp
+      macros.hpp
   tests/
     CMakeLists.txt
     test_keyed_vector.cpp
     test_ola_frame_buffer.cpp
+    test_functional.cpp
+    test_macros.cpp
   examples/
     CMakeLists.txt
     keyed_vector.cpp
@@ -55,6 +59,8 @@ vibes-plus-plus/
   specs/
     keyed_vector.md
     ola_frame_buffer.md
+    functional.md
+    macros.md
   CMakeLists.txt
   CMakePresets.json
   LICENSE
@@ -104,3 +110,4 @@ Each component has its own specification under [`specs/`](specs):
 | `keyed_vector` | `<vpp/keyed_vector.hpp>` | [specs/keyed_vector.md](specs/keyed_vector.md) |
 | `ola_frame_buffer` | `<vpp/ola_frame_buffer.hpp>` | [specs/ola_frame_buffer.md](specs/ola_frame_buffer.md) |
 | `functional` | `<vpp/functional.hpp>` | [specs/functional.md](specs/functional.md) |
+| `macros` | `<vpp/macros.hpp>` | [specs/macros.md](specs/macros.md) |
