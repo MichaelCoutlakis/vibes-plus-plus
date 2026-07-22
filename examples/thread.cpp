@@ -3,7 +3,6 @@
  * SPDX-FileCopyrightText: 2026 Michael Coutlakis
  *****************************************************************************/
 #include <chrono>
-#include <cstddef>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -13,7 +12,13 @@
 void example_ordered_pipeline()
 {
     std::string output;
-    auto sink = [&](std::string s) { output.append(s); };
+    auto sink = [&](vpp::task_result<std::string> r)
+    {
+        if(r)
+            output.append(*r);
+        else
+            std::cout << "user must handle, don't throw into worker thread";
+    };
     vpp::thread_pool pool(2);
 
     vpp::ordered_pipeline<std::string> pipeline(pool, sink);

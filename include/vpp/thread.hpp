@@ -62,7 +62,10 @@ private:
     struct model final : concept_t
     {
         F m_f;
-        explicit model(F f) : m_f(std::move(f)) {}
+        explicit model(F f) :
+            m_f(std::move(f))
+        {
+        }
         void call() override { m_f(); }
     };
 
@@ -124,6 +127,10 @@ public:
     // Run `init` exactly once on every worker thread, blocking until all have
     // done so. Intended for per-thread setup such as thread_local state, CPU
     // affinity, or RNG seeding. `init` is invoked with no arguments.
+    //
+    // Warning: must not be called from a pool worker thread, nor concurrently
+    // with itself on another thread -- either deadlocks, since it depends on
+    // every worker being free to pick up exactly one of the `n` gate tasks.
     template <typename F>
     void post_to_all(F init)
     {
@@ -200,39 +207,75 @@ private:
     bool m_stopping = false;
     std::vector<std::thread> m_workers;
 };
+// A minimal expected-lite delivered to the sink (C++17 has no std::expected).
+//
+// Exactly one of {value, error} is engaged: a successful task yields a value,
+// a throwing task yields the captured exception_ptr. The sink must inspect it
+// and handle the error branch itself -- errors are data here, not control flow.
+template <typename T>
+class task_result
+{
+public:
+    task_result(std::optional<T> value, std::exception_ptr error) noexcept :
+        m_value(std::move(value)),
+        m_error(std::move(error))
+    {
+    }
 
-// Runs tasks in parallel on a thread_pool while emitting their results to a
-// sink in the order the tasks were pushed (a resequencer).
+    bool has_value() const noexcept { return m_value && !m_error; }
+    explicit operator bool() const noexcept { return has_value(); }
+
+    std::exception_ptr error() const noexcept { return m_error; }
+
+    T &operator*() & noexcept { return *m_value; }
+    const T &operator*() const & noexcept { return *m_value; }
+    T &&operator*() && noexcept { return std::move(*m_value); }
+    T *operator->() noexcept { return &*m_value; }
+    const T *operator->() const noexcept { return &*m_value; }
+
+    // For sinks that would rather branch on a throw than on has_value().
+    T &value_or_throw() &
+    {
+        if(m_error)
+            std::rethrow_exception(m_error);
+        return *m_value;
+    }
+
+private:
+    std::optional<T> m_value;
+    std::exception_ptr m_error;
+};
+
+// Runs tasks in parallel on a thread_pool and delivers their results to a sink
+// strictly in submission order (a resequencer).
 //
-// Each `push(task)` submits a `() -> Result` callable to the pool. Whichever
-// worker runs it deposits the result into an internal buffer keyed by the
-// task's submission order; workers never touch the sink. Emission is driven
-// only by `push`, `poll` and `flush`, which drain the buffer's ready prefix and
-// call the sink strictly in submission order. Consequently the sink is only
-// ever invoked from the thread that calls those methods, never concurrently,
-// and never from a pool worker.
+// Each `push(task)` submits a `() -> Result` callable. The worker that runs it
+// computes off-lock, deposits the outcome keyed by submission order, then emits
+// the contiguous ready prefix. Emission is therefore driven by the workers, not
+// the producer: `push` blocks only when a bound is set and the window is full.
+// At most one thread emits at a time (m_emitting), so the sink is never invoked
+// concurrently -- but it IS invoked on pool worker threads, with no thread
+// affinity. A sink that needs to run on a particular thread must marshal itself.
 //
-// Exceptions: if a task throws, the exception is captured and re-thrown from a
-// draining call (`push`/`poll`/`flush`) at the point that task's result would
-// have been emitted -- i.e. in submission order. A later draining call resumes
-// with the following results. (During backpressure in bounded mode, a prior
-// task's exception may surface from `push` before the new task is enqueued.)
+// Errors: a throwing task's exception is captured and passed to the sink, in
+// order, as task_result::error(). Neither push nor flush ever throws a task's
+// exception. The sink receives errors as data and MUST NOT throw; any exception
+// escaping the sink is swallowed (it would otherwise strand m_emitting).
 //
-// The buffer is unbounded by default so that a slow early task never stalls the
-// workers: later tasks keep running and their results accumulate until the slow
-// task completes and unblocks a burst of ordered emission. Pass `max_pending`
-// to bound the number of submitted-but-not-yet-emitted tasks; `push` then
-// blocks once that many are outstanding, trading peak throughput for a memory
-// ceiling.
+// The buffer is unbounded by default so a slow early task never stalls workers;
+// pass max_pending to bound submitted-but-not-emitted tasks (trades throughput
+// for a memory ceiling). The destructor waits for every outstanding task to
+// complete and be emitted before destroying members (see m_inflight).
 //
-// The sink must not call back into the pipeline (push/poll/flush); that would
-// deadlock. The destructor drains all outstanding tasks (emitting them, but
-// swallowing any task/sink exceptions); call flush() beforehand if you need to
-// observe those exceptions.
+// Warning: the sink runs on a pool worker (see above) and must not re-enter the
+// pipeline. Calling push() or flush() from the sink deadlocks: the emitting
+// worker is parked inside the sink, so no other worker will advance emission.
 template <typename Result>
 class ordered_pipeline
 {
 public:
+    using sink_type = std::function<void(task_result<Result>)>;
+
     template <typename Sink>
     ordered_pipeline(
         thread_pool &pool,
@@ -240,18 +283,27 @@ public:
         std::optional<std::size_t> max_pending = std::nullopt) :
         m_pool(pool),
         m_sink(std::move(sink)),
-        m_max_pending(max_pending)
+        m_max_pending(
+            max_pending && *max_pending == 0 ? std::optional<std::size_t>(1) : max_pending)
     {
     }
 
-    ~ordered_pipeline() { quiesce(); }
+    // Waits for every posted task to fully return. Each posted lambda captured
+    // `this`, and a result may be emitted by a *different* worker than the one
+    // that computed it, so "all results emitted" is not sufficient to know no
+    // worker still touches us -- we must wait on the task count itself. By the
+    // time m_inflight hits zero, every deposit, emission and sink call is done.
+    ~ordered_pipeline()
+    {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_idle_cv.wait(lock, [this] { return m_inflight == 0; });
+    }
 
     ordered_pipeline(const ordered_pipeline &) = delete;
     ordered_pipeline &operator=(const ordered_pipeline &) = delete;
 
-    // Submit a task `() -> Result` to run on the pool. In bounded mode, blocks
-    // until enough results have been emitted to make room. Emits the ready
-    // prefix as a side effect, so it may throw a completed task's exception.
+    // Submit a task `() -> Result`. In bounded mode, blocks until a slot frees.
+    // Never runs the sink and never throws a task's exception.
     template <typename F>
     void push(F task)
     {
@@ -259,24 +311,10 @@ public:
         {
             std::unique_lock<std::mutex> lock(m_mutex);
             if(m_max_pending)
-            {
-                // Emission is producer-driven, so we must drain here to free
-                // room; otherwise ready results would never be emitted and the
-                // bound would deadlock.
-                drain_locked(/*propagate=*/true);
-                while(pending_locked() >= *m_max_pending)
-                {
-                    m_ready_cv.wait(
-                        lock,
-                        [this] {
-                            return front_ready_locked()
-                                || pending_locked() < *m_max_pending;
-                        });
-                    drain_locked(/*propagate=*/true);
-                }
-            }
+                m_space_cv.wait(lock, [this] { return pending_locked() < *m_max_pending; });
             seq = m_push_seq++;
             ensure_slot_locked(seq); // reserve before posting
+            ++m_inflight;
         }
 
         m_pool.post(
@@ -285,36 +323,28 @@ public:
                 slot outcome;
                 try
                 {
-                    outcome.value.emplace(task());
+                    outcome.value.emplace(task()); // compute off-lock
                 }
                 catch(...)
                 {
                     outcome.error = std::current_exception();
                 }
                 deposit(seq, std::move(outcome));
-            });
+                emit();
 
-        drain(/*propagate=*/true); // emit any ready prefix on the producer thread
+                std::lock_guard<std::mutex> lock(m_mutex);
+                if(--m_inflight == 0)
+                    m_idle_cv.notify_all();
+            });
     }
 
-    // Emit every result that is ready now, without waiting for outstanding
-    // tasks. Non-blocking apart from the sink calls. May be called from a
-    // consumer thread distinct from the producer. May throw a task's exception.
-    void poll() { drain(/*propagate=*/true); }
-
-    // Block until every task pushed so far has completed and been emitted. May
-    // throw a task's exception (in submission order); call again to continue.
+    // Block until every task pushed before this call has been emitted. Does not
+    // throw; errors have already been delivered to the sink in order.
     void flush()
     {
-        for(;;)
-        {
-            std::unique_lock<std::mutex> lock(m_mutex);
-            m_ready_cv.wait(
-                lock, [this] { return all_emitted_locked() || front_ready_locked(); });
-            if(all_emitted_locked())
-                return;
-            drain_locked(/*propagate=*/true);
-        }
+        std::unique_lock<std::mutex> lock(m_mutex);
+        const std::uint64_t target = m_push_seq;
+        m_drained_cv.wait(lock, [&] { return m_emit_seq >= target; });
     }
 
 private:
@@ -325,17 +355,7 @@ private:
         bool ready = false;
     };
 
-    bool all_emitted_locked() const { return m_emit_seq == m_push_seq; }
-
-    std::size_t pending_locked() const
-    {
-        return static_cast<std::size_t>(m_push_seq - m_emit_seq);
-    }
-
-    bool front_ready_locked() const
-    {
-        return !m_buffer.empty() && m_buffer.front().ready;
-    }
+    std::size_t pending_locked() const { return static_cast<std::size_t>(m_push_seq - m_emit_seq); }
 
     // m_buffer.front() corresponds to m_emit_seq; reserve up to `seq`.
     void ensure_slot_locked(std::uint64_t seq)
@@ -347,84 +367,65 @@ private:
 
     void deposit(std::uint64_t seq, slot outcome)
     {
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            const std::size_t idx = static_cast<std::size_t>(seq - m_emit_seq);
-            m_buffer[idx] = std::move(outcome);
-            m_buffer[idx].ready = true;
-        }
-        m_ready_cv.notify_all(); // a slot became ready / room may have opened
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const std::size_t idx = static_cast<std::size_t>(seq - m_emit_seq);
+        outcome.ready = true;
+        m_buffer[idx] = std::move(outcome);
+        // No notify: this worker emits next, or the active emitter re-checks
+        // the head under the lock and picks this slot up.
     }
 
-    void drain(bool propagate)
+    // Emit the contiguous ready prefix in submission order. At most one thread
+    // emits at a time; the sink runs with the mutex released so workers can keep
+    // depositing. The final "front not ready" check and clearing m_emitting are
+    // one contiguous critical section, so any concurrent deposit is ordered
+    // either before that check (this emitter takes it) or after the unlock (that
+    // depositor's own emit() takes it) -- no ready slot is ever stranded.
+    void emit()
     {
         std::unique_lock<std::mutex> lock(m_mutex);
-        drain_locked(propagate);
-    }
+        if(m_emitting)
+            return;
+        m_emitting = true;
 
-    // Emit the ready prefix in submission order. Precondition: m_mutex is held.
-    // The lock is kept across sink calls (v1 simplicity; the sink must not
-    // re-enter). With propagate == true a task's exception is re-thrown here in
-    // order, after advancing past it; with false it (and any sink exception) is
-    // swallowed so draining runs to completion.
-    void drain_locked(bool propagate)
-    {
-        while(front_ready_locked())
+        while(!m_buffer.empty() && m_buffer.front().ready)
         {
             slot s = std::move(m_buffer.front());
             m_buffer.pop_front();
             ++m_emit_seq;
-            m_ready_cv.notify_all(); // room opened for a bounded-mode push
+            m_space_cv.notify_all();   // room freed for a bounded producer
+            m_drained_cv.notify_all(); // m_emit_seq advanced, for flush()
 
-            if(s.error)
+            lock.unlock();
+            try
             {
-                if(propagate)
-                    std::rethrow_exception(s.error);
-                continue; // swallow
+                m_sink(task_result<Result>(std::move(s.value), std::move(s.error)));
             }
-            if(propagate)
+            catch(...)
             {
-                m_sink(std::move(*s.value));
+                // The sink gets errors as data and must not throw; swallowing
+                // keeps m_emitting consistent and the pipeline alive.
             }
-            else
-            {
-                try
-                {
-                    m_sink(std::move(*s.value));
-                }
-                catch(...)
-                {
-                }
-            }
+            lock.lock();
         }
-    }
 
-    // Drain to completion, emitting everything and swallowing exceptions. Used
-    // by the destructor: it must wait for every outstanding task to deposit
-    // (each posted lambda captures `this`) before members are destroyed.
-    void quiesce()
-    {
-        for(;;)
-        {
-            std::unique_lock<std::mutex> lock(m_mutex);
-            m_ready_cv.wait(
-                lock, [this] { return all_emitted_locked() || front_ready_locked(); });
-            if(all_emitted_locked())
-                return;
-            drain_locked(/*propagate=*/false);
-        }
+        m_emitting = false;
     }
 
     thread_pool &m_pool;
-    std::function<void(Result)> m_sink;
+    sink_type m_sink;
     std::optional<std::size_t> m_max_pending;
 
     std::mutex m_mutex;
-    std::condition_variable m_ready_cv;
+    std::condition_variable m_space_cv;   // a slot was emitted (room freed)
+    std::condition_variable m_drained_cv; // m_emit_seq advanced (for flush)
+    std::condition_variable m_idle_cv;    // m_inflight reached zero (for dtor)
 
-    std::deque<slot> m_buffer;    // front corresponds to m_emit_seq
-    std::uint64_t m_push_seq = 0; // next sequence to assign on push
-    std::uint64_t m_emit_seq = 0; // next sequence to emit
+    std::deque<slot> m_buffer; // front corresponds to m_emit_seq
+    std::uint64_t m_push_seq = 0;
+    std::uint64_t m_emit_seq = 0;
+    std::size_t m_inflight = 0;
+    bool m_emitting = false;
 };
 
 } // namespace vpp

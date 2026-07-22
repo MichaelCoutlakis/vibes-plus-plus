@@ -95,7 +95,7 @@ TEST(ordered_pipeline, EmitsInPushOrderDespiteOutOfOrderCompletion)
     vpp::thread_pool pool(4);
     std::vector<int> out;
     {
-        vpp::ordered_pipeline<int> pipe(pool, [&](int v) { out.push_back(v); });
+        vpp::ordered_pipeline<int> pipe(pool, [&](vpp::task_result<int> r) { out.push_back(*r); });
         // Earlier tasks sleep longer, so they finish last.
         for(int i = 0; i < 8; ++i)
             pipe.push([i] {
@@ -109,24 +109,34 @@ TEST(ordered_pipeline, EmitsInPushOrderDespiteOutOfOrderCompletion)
         EXPECT_EQ(out[i], i);
 }
 
-TEST(ordered_pipeline, SinkIsCalledOnlyOnTheDrainingThread)
+TEST(ordered_pipeline, SinkRunsOnAWorkerAndIsNeverInvokedConcurrently)
 {
     vpp::thread_pool pool(4);
     const std::thread::id producer = std::this_thread::get_id();
-    bool wrong_thread = false;
+    std::atomic<int> in_sink{0};
+    std::atomic<bool> overlapped{false};
+    std::atomic<bool> ran_on_worker{false};
 
     {
         vpp::ordered_pipeline<int> pipe(
             pool,
-            [&](int) {
+            [&](vpp::task_result<int>) {
+                // Emission is worker-driven now: the sink runs on a pool thread,
+                // never the producer, and -- guarded by a single emitter -- never
+                // two at once. Widen the window so any overlap is observed.
                 if(std::this_thread::get_id() != producer)
-                    wrong_thread = true;
+                    ran_on_worker = true;
+                if(in_sink.fetch_add(1) != 0)
+                    overlapped = true;
+                std::this_thread::sleep_for(1ms);
+                in_sink.fetch_sub(1);
             });
         for(int i = 0; i < 50; ++i)
             pipe.push([i] { return i; });
         pipe.flush();
     }
-    EXPECT_FALSE(wrong_thread);
+    EXPECT_FALSE(overlapped);
+    EXPECT_TRUE(ran_on_worker);
 }
 
 TEST(ordered_pipeline, FlushWaitsForAllResults)
@@ -134,7 +144,7 @@ TEST(ordered_pipeline, FlushWaitsForAllResults)
     vpp::thread_pool pool(2);
     std::atomic<int> emitted{0};
     {
-        vpp::ordered_pipeline<int> pipe(pool, [&](int) { ++emitted; });
+        vpp::ordered_pipeline<int> pipe(pool, [&](vpp::task_result<int>) { ++emitted; });
         for(int i = 0; i < 20; ++i)
             pipe.push([i] {
                 std::this_thread::sleep_for(2ms);
@@ -145,47 +155,38 @@ TEST(ordered_pipeline, FlushWaitsForAllResults)
     }
 }
 
-TEST(ordered_pipeline, PollEmitsReadyPrefixWithoutBlocking)
-{
-    vpp::thread_pool pool(2);
-    std::vector<int> out;
-    vpp::ordered_pipeline<int> pipe(pool, [&](int v) { out.push_back(v); });
-
-    // A slow head keeps the prefix un-emittable until it completes.
-    pipe.push([] {
-        std::this_thread::sleep_for(80ms);
-        return 0;
-    });
-    pipe.push([] { return 1; });
-
-    pipe.poll(); // task 0 not done yet -> nothing can be emitted in order
-    EXPECT_TRUE(out.empty());
-
-    pipe.flush();
-    ASSERT_EQ(out.size(), 2u);
-    EXPECT_EQ(out[0], 0);
-    EXPECT_EQ(out[1], 1);
-}
-
-TEST(ordered_pipeline, TaskExceptionRethrownInOrderThenDrainingContinues)
+TEST(ordered_pipeline, TaskExceptionDeliveredToSinkInOrderThenStreamContinues)
 {
     vpp::thread_pool pool(4);
-    std::vector<int> out;
-    vpp::ordered_pipeline<int> pipe(pool, [&](int v) { out.push_back(v); });
+    std::vector<std::string> events; // successes as text, failures as "error"
+    std::exception_ptr captured;
+    {
+        vpp::ordered_pipeline<int> pipe(pool, [&](vpp::task_result<int> r) {
+            if(r)
+            {
+                events.push_back(std::to_string(*r));
+            }
+            else
+            {
+                events.push_back("error");
+                captured = r.error();
+            }
+        });
 
-    pipe.push([] { return 10; });
-    pipe.push([]() -> int { throw std::runtime_error("boom"); });
-    pipe.push([] { return 30; });
+        pipe.push([] { return 10; });
+        pipe.push([]() -> int { throw std::runtime_error("boom"); });
+        pipe.push([] { return 30; });
 
-    // First flush emits 10, then re-throws the task-1 exception in order.
-    EXPECT_THROW(pipe.flush(), std::runtime_error);
-    ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0], 10);
+        pipe.flush(); // never throws: the failure arrives as data, in order
+    }
 
-    // Draining resumes past the failed task on the next flush.
-    pipe.flush();
-    ASSERT_EQ(out.size(), 2u);
-    EXPECT_EQ(out[1], 30);
+    ASSERT_EQ(events.size(), 3u);
+    EXPECT_EQ(events[0], "10");
+    EXPECT_EQ(events[1], "error");
+    EXPECT_EQ(events[2], "30");
+
+    ASSERT_TRUE(captured);
+    EXPECT_THROW(std::rethrow_exception(captured), std::runtime_error);
 }
 
 TEST(ordered_pipeline, SupportsMoveOnlyResultType)
@@ -194,7 +195,7 @@ TEST(ordered_pipeline, SupportsMoveOnlyResultType)
     std::vector<int> out;
     {
         vpp::ordered_pipeline<std::unique_ptr<int>> pipe(
-            pool, [&](std::unique_ptr<int> p) { out.push_back(*p); });
+            pool, [&](vpp::task_result<std::unique_ptr<int>> r) { out.push_back(**r); });
         for(int i = 0; i < 10; ++i)
             pipe.push([i] { return std::make_unique<int>(i); });
         pipe.flush();
@@ -209,7 +210,7 @@ TEST(ordered_pipeline, DestructorFlushesRemaining)
     vpp::thread_pool pool(2);
     std::vector<int> out;
     {
-        vpp::ordered_pipeline<int> pipe(pool, [&](int v) { out.push_back(v); });
+        vpp::ordered_pipeline<int> pipe(pool, [&](vpp::task_result<int> r) { out.push_back(*r); });
         for(int i = 0; i < 16; ++i)
             pipe.push([i] {
                 std::this_thread::sleep_for(1ms);
@@ -227,9 +228,10 @@ TEST(ordered_pipeline, BoundedModePreservesOrderAndDoesNotDeadlock)
     vpp::thread_pool pool(4);
     std::vector<int> out;
     {
-        // A tight bound plus a slow head exercises backpressure: push must
-        // drain to make room rather than block forever.
-        vpp::ordered_pipeline<int> pipe(pool, [&](int v) { out.push_back(v); }, 2);
+        // A tight bound plus a slow head exercises backpressure: worker-driven
+        // emission must free slots so push can make room rather than block forever.
+        vpp::ordered_pipeline<int> pipe(
+            pool, [&](vpp::task_result<int> r) { out.push_back(*r); }, 2);
         for(int i = 0; i < 100; ++i)
             pipe.push([i] {
                 if(i == 0)
