@@ -255,7 +255,8 @@ private:
 // the producer: `push` blocks only when a bound is set and the window is full.
 // At most one thread emits at a time (m_emitting), so the sink is never invoked
 // concurrently -- but it IS invoked on pool worker threads, with no thread
-// affinity. A sink that needs to run on a particular thread must marshal itself.
+// affinity. A sink that needs to run on a particular thread must marshal
+// itself.
 //
 // Errors: a throwing task's exception is captured and passed to the sink, in
 // order, as task_result::error(). Neither push nor flush ever throws a task's

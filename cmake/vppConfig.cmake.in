@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+# Resolve vpp's transitive usage requirements before importing its targets, so a
+# consumer only has to call find_package(vpp). Threads is needed by
+# <vpp/thread.hpp> (e.g. -pthread on Linux; a no-op where the platform bundles
+# threading). Consumers wanting specific thread options should set the relevant
+# variables (e.g. THREADS_PREFER_PTHREAD_FLAG) before find_package(vpp).
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/vppTargets.cmake")
+
+check_required_components(vpp)

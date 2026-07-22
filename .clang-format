@@ -55,5 +55,5 @@ AlwaysBreakTemplateDeclarations:            Yes
 AllowShortBlocksOnASingleLine:               Never
 AllowShortLambdasOnASingleLine:             All
 AllowShortCaseLabelsOnASingleLine:           true
-AllowShortFunctionsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
 # coming in clang-format 23 AllowShortRecordOnASingleLine: SRS_Empty
