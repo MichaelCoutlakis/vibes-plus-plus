@@ -9,6 +9,7 @@
 #include <cstring>
 #include <functional>
 #include <vector>
+#include <vpp/mat_view.hpp>
 
 namespace vpp
 {
@@ -183,21 +184,35 @@ public:
     /// @pre `frames` addresses at least `num_frames * num_in_channels()` samples.
     void push(const T *frames, std::size_t num_frames)
     {
+        if constexpr(Layout == ola_layout::interleaved)
+            push(mat_view<const T>(frames, m_num_in_ch, num_frames));
+        else
+            push(mat_view<const T>(frames, num_frames, m_num_in_ch));
+    }
+
+    /// Append the frames of a (possibly strided) matrix view, e.g. a block of a
+    /// larger matrix; otherwise as push(const T *, std::size_t).
+    ///
+    /// The view's orientation is the layout's natural one, so its columns are
+    /// contiguous: frames x channels for `planar`, channels x frames for
+    /// `interleaved`. A frame range of an `arma::fmat` with channels in columns
+    /// is then `push(audio.rows(f0, f1))` on a planar buffer.
+    ///
+    /// @pre The view's channel dimension equals num_in_channels():
+    ///      `frames.cols()` for `planar`, `frames.rows()` for `interleaved`.
+    void push(mat_view<const T> frames)
+    {
+        const std::size_t num_frames =
+            Layout == ola_layout::interleaved ? frames.cols() : frames.rows();
+        assert(
+            (Layout == ola_layout::interleaved ? frames.rows() : frames.cols()) == m_num_in_ch);
+
         for(std::size_t offset = 0; offset < num_frames;)
         {
             const std::size_t space = m_frame_size - m_frames_in_buf;
             const std::size_t to_copy = std::min(num_frames - offset, space);
 
-            move_frames(
-                frames,
-                num_frames,
-                offset,
-                m_input_buf.data(),
-                m_frame_size,
-                m_frames_in_buf,
-                to_copy,
-                m_num_in_ch);
-
+            copy_in(frames, offset, to_copy);
             offset += to_copy;
             m_frames_in_buf += to_copy;
 
@@ -267,6 +282,34 @@ private:
                 std::memmove(
                     dst + c * dst_frames + dst_start,
                     src + c * src_frames + src_start,
+                    count * sizeof(T));
+        }
+    }
+
+    // Copy `count` frames starting at frame `start` of `src` (oriented as for
+    // push(mat_view)) to the end of the buffered input.
+    void copy_in(mat_view<const T> src, std::size_t start, std::size_t count) noexcept
+    {
+        if(count == 0)
+            return;
+        if constexpr(Layout == ola_layout::interleaved)
+        {
+            T *dst = m_input_buf.data() + m_frames_in_buf * m_num_in_ch;
+            if(src.col_stride() == m_num_in_ch)
+                std::memcpy(dst, src.col_ptr(start), count * m_num_in_ch * sizeof(T));
+            else
+                for(std::size_t f = 0; f < count; ++f)
+                    std::memcpy(
+                        dst + f * m_num_in_ch,
+                        src.col_ptr(start + f),
+                        m_num_in_ch * sizeof(T));
+        }
+        else
+        {
+            for(std::size_t c = 0; c < m_num_in_ch; ++c)
+                std::memcpy(
+                    m_input_buf.data() + c * m_frame_size + m_frames_in_buf,
+                    src.col_ptr(c) + start,
                     count * sizeof(T));
         }
     }

@@ -140,6 +140,7 @@ struct output_context
 | Member | Description |
 |--------|-------------|
 | `void push(const T* frames, std::size_t num_frames)` | Append `num_frames` frames (in the configured layout). Fires `process_fn`/`output_fn` as blocks and hops complete. No allocation. |
+| `void push(mat_view<const T> frames)` | As above, from a possibly strided [`mat_view`](mat_view.md), e.g. a frame range or channel subset of a larger matrix. Oriented frames x channels for `planar`, channels x frames for `interleaved` (so columns are contiguous); the channel dimension must equal `num_in_channels()`. |
 | `void flush()` | Zero-pad any buffered partial block, process it, then reset the accumulation buffer. Call once at end-of-stream. |
 | `std::size_t frame_size() const noexcept` | Configured frame/block size. |
 | `std::size_t hop_size() const noexcept` | Configured hop size. |
@@ -172,6 +173,15 @@ while (auto chunk = source.read())
     buffer.push(chunk.data(), chunk.num_frames());
 
 buffer.flush();
+```
+
+With channels in the columns of a matrix (planar), `push` takes a frame range
+directly, without copying it first:
+
+```cpp
+using ola_planar = vpp::ola_frame_buffer<float, vpp::ola_layout::planar>;
+arma::fmat audio(num_frames, num_channels);         // with <vpp/mat_view_arma.hpp>
+buffer.push(audio.rows(start, start + count - 1));  // frames [start, start + count)
 ```
 
 For simple per-sample work the `at_in`/`at_out` accessors hide the layout

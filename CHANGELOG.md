@@ -14,6 +14,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Implicit conversion from adapted matrix types via `mat_view_traits` / `cube_view_traits`; temporaries accepted only for borrowed types (e.g. subviews)
   - `as_view(m)` for deduced element type and constness
   - `<vpp/mat_view_arma.hpp>`: adapters for Armadillo `Mat`, `Col`, `Row`, `subview`, `Cube`, `subview_cube`
+- `ola_frame_buffer::push(mat_view<const T>)`: push a strided block (e.g. a frame range or channel subset of a larger matrix)
 
 ### Changed
 - C++20 is now the minimum language standard (was C++17)

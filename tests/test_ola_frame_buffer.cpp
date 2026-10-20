@@ -187,3 +187,76 @@ TEST(ola_frame_buffer, PlanarOverlapScales)
     // Skip the first hop per channel (ramp-up = 2 frames x 2 ch = 4 samples).
     EXPECT_THAT(std::vector<float>(out.begin() + 4, out.end()), Each(FloatEq(2.0f)));
 }
+
+// ---------------------------------------------------------------------------
+// push(mat_view): strided sources
+// ---------------------------------------------------------------------------
+
+TEST(ola_frame_buffer, PlanarPushViewOfFrameRange)
+{
+    // A 10-frame x 3-channel matrix; push frames 3..8 of channels 1..2 only.
+    // Matches pushing the same samples from a compact planar copy.
+    std::vector<float> matrix(10 * 3);
+    std::iota(matrix.begin(), matrix.end(), 0.f);
+    const vpp::mat_view<const float> all(matrix.data(), 10, 3);
+    const auto block = all.block(3, 1, 6, 2);
+
+    std::vector<float> compact;
+    for(std::size_t c = 0; c < block.cols(); ++c)
+        compact.insert(compact.end(), block.col(c).begin(), block.col(c).end());
+
+    std::vector<float> out_view, out_ptr;
+    buf_planar buf_v(4, 2, 2, 2, passthrough, make_collector(out_view));
+    buf_planar buf_p(4, 2, 2, 2, passthrough, make_collector(out_ptr));
+    buf_v.push(block);
+    buf_p.push(compact.data(), 6);
+    buf_v.flush();
+    buf_p.flush();
+
+    ASSERT_FALSE(out_view.empty());
+    EXPECT_THAT(out_view, Pointwise(FloatEq(), out_ptr));
+}
+
+TEST(ola_frame_buffer, PlanarPushViewNoOverlapIsPassthrough)
+{
+    // block == hop: output hops are exactly the pushed frames, per channel.
+    std::vector<float> matrix(8 * 2);
+    std::iota(matrix.begin(), matrix.end(), 0.f);
+    const auto tail = vpp::mat_view<const float>(matrix.data(), 8, 2).rows_from(4);
+
+    std::vector<float> out;
+    buf_planar buf(4, 4, 2, 2, passthrough, make_collector(out));
+    buf.push(tail);
+    EXPECT_THAT(out, Pointwise(FloatEq(), std::vector<float>{4, 5, 6, 7, 12, 13, 14, 15}));
+}
+
+TEST(ola_frame_buffer, InterleavedPushViewOfChannelSubset)
+{
+    // A 4-channel interleaved stream viewed as channels x frames (col_stride 4);
+    // push channels 1..2 into a 2-channel buffer.
+    std::vector<float> stream(4 * 6);
+    std::iota(stream.begin(), stream.end(), 0.f);
+    const auto pair = vpp::mat_view<const float>(stream.data(), 4, 6).row_range(1, 2);
+
+    std::vector<float> out;
+    buf_t buf(3, 3, 2, 2, passthrough, make_collector(out));
+    buf.push(pair);
+    EXPECT_THAT(
+        out,
+        Pointwise(FloatEq(), std::vector<float>{1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21, 22}));
+}
+
+TEST(ola_frame_buffer, InterleavedPushViewChunkedMatchesSinglePush)
+{
+    std::vector<float> in(2 * 20);
+    std::iota(in.begin(), in.end(), 0.f);
+    const vpp::mat_view<const float> all(in.data(), 2, 20); // channels x frames
+
+    std::vector<float> out_s, out_c;
+    buf_t buf_s(8, 2, 2, 2, passthrough, make_collector(out_s));
+    buf_t buf_c(8, 2, 2, 2, passthrough, make_collector(out_c));
+    buf_s.push(all);
+    for(std::size_t f = 0; f < 20; f += 3)
+        buf_c.push(all.col_range(f, std::min<std::size_t>(3, 20 - f)));
+    EXPECT_THAT(out_c, Pointwise(FloatEq(), out_s));
+}
