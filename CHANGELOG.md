@@ -7,6 +7,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `mat_view<T>` / `cube_view<T>`: non-owning views of column-major matrices and cubes, or blocks of them
+  - Column stride (and slice stride) so a block of a larger matrix is viewed without copying
+  - O(1) sub-views: `block`, `row_range`, `rows_from`, `col_range`, `cols_from`, `row`, `slice`, `slice_range`
+  - Implicit conversion from adapted matrix types via `mat_view_traits` / `cube_view_traits`; temporaries accepted only for borrowed types (e.g. subviews)
+  - `as_view(m)` for deduced element type and constness
+  - `<vpp/mat_view_arma.hpp>`: adapters for Armadillo `Mat`, `Col`, `Row`, `subview`, `Cube`, `subview_cube`
+
 ### Changed
 - C++20 is now the minimum language standard (was C++17)
 

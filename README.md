@@ -13,6 +13,7 @@ See [SPEC.md](SPEC.md) for project-level specifications, and the [`specs/`](spec
 - [`ola_frame_buffer`](specs/ola_frame_buffer.md) — overlap-add frame buffer for STFT-style block processing.
 - [`functional`](specs/functional.md) — function-object utilities; includes `compare_proj`, a comparator that orders by a projected member.
 - [`macros`](specs/macros.md) — small macro helpers; includes `VPP_FWD`, a terse `std::forward<decltype(x)>(x)`.
+- [`mat_view`](specs/mat_view.md) — non-owning column-major matrix and cube views (with strides) for library-neutral interfaces; Armadillo adapters included (the example and adapter tests build only when Armadillo is found).
 - [`thread`](specs/thread.md) — a `thread_pool` and `ordered_pipeline` for parallel execution with serial, in-order output.
 
 See the [examples folder](examples) for example usage.
