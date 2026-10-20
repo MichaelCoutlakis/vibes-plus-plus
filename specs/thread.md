@@ -49,7 +49,7 @@ public:
 
 ## `task_result<T>`
 
-The value handed to an `ordered_pipeline` sink. C++17 has no `std::expected`, so
+The value handed to an `ordered_pipeline` sink. `std::expected` is C++23, so
 this is a minimal stand-in: exactly one of `{value, error}` is engaged.
 
 ```cpp

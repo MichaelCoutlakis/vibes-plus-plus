@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Vibes++ collects small, useful C++17 utilities that are:
+Vibes++ collects small, useful C++20 utilities that are:
 
-- not available in C++17,
+- not available in C++20,
 - lighter than Boost or the alternatives, or
 - too small to justify a separate project.
 
@@ -60,7 +60,7 @@ Follow the **Coding Standard** and **Documentation** sections of
   adds what the code does not already convey.
 
 Choose names with brevity, meaning, and clarity. Before adding a utility, check
-whether a permissive C++17 project already provides it.
+whether a permissive C++20 project already provides it.
 
 ## Process
 

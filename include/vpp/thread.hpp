@@ -207,7 +207,7 @@ private:
     bool m_stopping = false;
     std::vector<std::thread> m_workers;
 };
-// A minimal expected-lite delivered to the sink (C++17 has no std::expected).
+// A minimal expected-lite delivered to the sink (std::expected is C++23).
 //
 // Exactly one of {value, error} is engaged: a successful task yields a value,
 // a throwing task yields the captured exception_ptr. The sink must inspect it

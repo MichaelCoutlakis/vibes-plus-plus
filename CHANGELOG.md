@@ -5,6 +5,14 @@ All notable changes to this project will be documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- C++20 is now the minimum language standard (was C++17)
+
+### Removed
+- `bind_front`: use `std::bind_front`
+
 ## [0.1.0] - 2026-07-22
 
 ### Added

@@ -8,23 +8,6 @@
 #include <string>
 #include <vpp/functional.hpp>
 
-constexpr static inline int add(int a, int b, int c) { return a + b + c; }
-
-void example_bind_front()
-{
-    struct calculator
-    {
-        int add(int a, int b, int c) { return a + b + c; }
-    };
-
-    calculator my_calc;
-    auto my_adder = vpp::bind_front(&calculator::add, &my_calc);
-    fmt::print("my_adder(1, 2, 3) = {}\n", my_adder(1, 2, 3));
-
-    auto add2 = vpp::bind_front(add);
-    fmt::print("add2(1, 2, 3) = {}\n", add2(1, 2, 3));
-}
-
 void example_compare_projection()
 {
 
@@ -47,7 +30,6 @@ void example_compare_projection()
 
 int main()
 {
-    example_bind_front();
     example_compare_projection();
     return 0;
 }

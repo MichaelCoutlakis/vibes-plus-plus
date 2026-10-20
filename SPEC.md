@@ -38,7 +38,7 @@ For other information, see the [README](README.md)
 
 ## Project Requirements
 
-- The library shall support C++ >= 17 on GCC, Clang, and MSVC.
+- The library shall support C++ >= 20 on GCC, Clang, and MSVC.
 - The library shall use `CMake` (>= 3.20) for build and install.
 - The library shall be header-only where practical; the CMake target is
   `vpp::vpp` (INTERFACE).
