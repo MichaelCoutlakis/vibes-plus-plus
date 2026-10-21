@@ -26,6 +26,10 @@ void example_compare_projection()
     fmt::println("samples by time");
     for(auto &s : samples_by_time)
         fmt::println("time={}, value={}", s.time, s.value);
+
+    // Transparent lookup by time, with no dummy sample.
+    const auto it = samples_by_time.lower_bound(0.5f);
+    fmt::println("first sample at or after t=0.5: time={}, value={}", it->time, it->value);
 }
 
 int main()

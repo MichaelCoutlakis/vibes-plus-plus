@@ -29,8 +29,11 @@ cost as a container comparator.
 ```cpp
 struct player { std::string name; int score; };
 
-// As an associative-container comparator (the type, not just a predicate):
-std::set<player, vpp::compare_proj<&player::score>> by_score;
+// As an associative-container comparator (the type, not just a predicate).
+// Key on something unique: a std::set drops elements whose keys compare equal,
+// so use a std::multiset when keys repeat (e.g. scores).
+std::set<player, vpp::compare_proj<&player::name>> by_name;
+std::multiset<player, vpp::compare_proj<&player::score>> by_score;
 
 // As a one-off predicate, ascending then descending:
 std::sort(v.begin(), v.end(), vpp::compare_proj<&player::score>{});
@@ -39,6 +42,37 @@ std::sort(v.begin(), v.end(), vpp::compare_proj<&player::score, std::greater<>>{
 // Project through a member function just as easily:
 std::sort(v.begin(), v.end(), vpp::compare_proj<&player::rank>{});
 ```
+
+### Transparent lookup
+
+`compare_proj` declares `is_transparent`, and each operand is projected only if
+`Proj` can be applied to it; any other operand is taken to be an
+already-projected key and passed to `Compare` as is. The two operands may
+therefore differ in type: an element and a key, in either order, or a derived
+and a base element.
+
+This enables the containers' heterogeneous overloads of `find`, `contains`,
+`count`, `lower_bound`, `upper_bound`, and `equal_range`, so lookup by key needs
+no dummy element:
+
+```cpp
+by_name.find(std::string_view{"ada"});  // O(log n); builds no player and no std::string
+auto [lo, hi] = by_score.equal_range(20);
+auto first = by_score.lower_bound(25);  // first player scoring at least 25
+```
+
+Requirements and caveats:
+
+- `Proj` must be SFINAE-friendly, as pointers to members are. An unconstrained
+  generic lambda (`[](const auto &p) { return p.score; }`) is not: asking
+  whether it applies to a key fails to compile inside its body. Give it a
+  constraint or an explicit parameter type.
+- For keyed lookup, `Compare` must accept the key type alongside the projected
+  type, as `std::less<>` does for e.g. `std::string` and `std::string_view`.
+- "Can `Proj` be applied" is decided by `std::invoke`. A pointer to member
+  applies only to its class (or a derived class), but a free-function `Proj`
+  taking `const T &` also accepts anything that converts implicitly to `T`, and
+  such a key is converted and projected rather than compared as is.
 
 ### Relationship to ranges projections
 
@@ -53,7 +87,8 @@ argument) do not give you.
 | Expression | Description |
 |-----------|-------------|
 | `vpp::compare_proj<Proj, Compare>` | Empty comparator type projecting through `Proj` and comparing with `Compare` (default `std::less<>`). |
-| `cmp(lhs, rhs)` | Returns `Compare{}(std::invoke(Proj, lhs), std::invoke(Proj, rhs))`. |
+| `cmp(lhs, rhs)` | Returns `Compare{}(std::invoke(Proj, lhs), std::invoke(Proj, rhs))`, projecting only operands `Proj` applies to. |
+| `compare_proj<...>::is_transparent` | Present; enables heterogeneous lookup in associative containers. |
 
 ## `abs`
 

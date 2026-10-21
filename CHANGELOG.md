@@ -16,6 +16,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `vpp::abs`: absolute value as a `constexpr` function object, usable as a projection (`std::abs` is not addressable)
 - `vpp::distance_to(x)`: projection giving `|e - x|`, without wrapping for unsigned types
 
+### Changed
+- `compare_proj` is transparent and accepts mixed operands: an element and an already-projected key (either order), or derived and base elements
+  - Associative containers can look up by key, e.g. `by_name.find(std::string_view{"ada"})`, without constructing an element
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
