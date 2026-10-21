@@ -10,9 +10,7 @@ vpp_example(functional)
 vpp_example(thread)
 
 # The mat_view example converts from Armadillo matrices, so it needs Armadillo.
-find_package(Armadillo QUIET)
-if(ARMADILLO_FOUND)
+if(TARGET Armadillo::Armadillo)
     vpp_example(mat_view)
-    target_include_directories(example_mat_view PRIVATE ${ARMADILLO_INCLUDE_DIRS})
-    target_link_libraries(example_mat_view PRIVATE ${ARMADILLO_LIBRARIES})
+    target_link_libraries(example_mat_view PRIVATE Armadillo::Armadillo)
 endif()

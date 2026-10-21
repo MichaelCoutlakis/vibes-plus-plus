@@ -8,7 +8,7 @@
 
 namespace {
 
-float sum(vpp::mat_view<const float> v)
+float total(vpp::mat_view<const float> v)
 {
     float total = 0;
     for(std::size_t c = 0; c < v.cols(); ++c)
@@ -47,7 +47,7 @@ TEST(mat_view_arma, ViewsWholeMatrix)
     EXPECT_EQ(v.cols(), 4u);
     EXPECT_EQ(v.col_stride(), 3u);
     EXPECT_EQ(v(2, 3), m(2, 3));
-    EXPECT_EQ(sum(m), arma::accu(m));
+    EXPECT_EQ(total(m), arma::accu(m));
 }
 
 TEST(mat_view_arma, WritesThroughToMatrix)
@@ -81,9 +81,9 @@ TEST(mat_view_arma, ViewsColRowAndFixed)
     EXPECT_EQ(vpp::as_view(c).cols(), 1u);
     EXPECT_EQ(vpp::as_view(r).rows(), 1u);
     EXPECT_EQ(vpp::as_view(r).cols(), 3u);
-    EXPECT_EQ(sum(c), 6.f);
-    EXPECT_EQ(sum(r), 6.f);
-    EXPECT_EQ(sum(f), 10.f);
+    EXPECT_EQ(total(c), 6.f);
+    EXPECT_EQ(total(r), 6.f);
+    EXPECT_EQ(total(f), 10.f);
 }
 
 TEST(mat_view_arma, ExpressionsDoNotConvert)
@@ -108,7 +108,7 @@ TEST(mat_view_arma, RowsSubviewIsStridedAndUncopied)
     };
     check(m.rows(4, 5));
     check(m.tail_rows(2));
-    EXPECT_EQ(sum(m.rows(4, 5)), arma::accu(m.rows(4, 5)));
+    EXPECT_EQ(total(m.rows(4, 5)), arma::accu(m.rows(4, 5)));
 }
 
 TEST(mat_view_arma, SubmatWritesThrough)
@@ -137,7 +137,7 @@ TEST(mat_view_arma, SubviewOfConstMatrixIsReadOnly)
     const arma::fmat m = make_fmat(3, 3);
     static_assert(std::is_same_v<decltype(vpp::as_view(m.rows(0, 1))), vpp::mat_view<const float>>);
     static_assert(!std::is_convertible_v<decltype(m.rows(0, 1)), vpp::mat_view<float>>);
-    EXPECT_EQ(sum(m.rows(0, 1)), arma::accu(m.rows(0, 1)));
+    EXPECT_EQ(total(m.rows(0, 1)), arma::accu(m.rows(0, 1)));
 }
 
 // ---------------------------------------------------------------------------

@@ -58,14 +58,18 @@ install(FILES
     DESTINATION ${VPP_INSTALL_CMAKEDIR}
 )
 
-# Tests (opt-in via -DBUILD_TESTING=ON)
+# Tests (opt-in via -DBUILD_TESTING=ON) and examples (opt-in via -DBUILD_EXAMPLES=ON)
 include(CTest)
+option(BUILD_EXAMPLES "Build example programs" OFF)
+
+if(BUILD_TESTING OR BUILD_EXAMPLES)
+    include(cmake/armadillo.cmake)
+endif()
+
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-# Examples (opt-in via -DBUILD_EXAMPLES=ON)
-option(BUILD_EXAMPLES "Build example programs" OFF)
 if(BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()

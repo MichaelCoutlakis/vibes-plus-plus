@@ -11,15 +11,14 @@
 // (only the caller includes <vpp/mat_view_arma.hpp>), and a block of a matrix
 // is passed without copying it.
 
-// Peak absolute sample per channel, for audio held as frames x channels.
-void print_peaks(vpp::mat_view<const float> audio)
+// Print a matrix
+void print(vpp::mat_view<const float> mat_view)
 {
-    for(std::size_t c = 0; c < audio.cols(); ++c)
+    for(size_t r = 0U; r != mat_view.rows(); ++r)
     {
-        float peak = 0;
-        for(float x : audio.col(c))
-            peak = std::max(peak, x < 0 ? -x : x);
-        fmt::println("  channel {}: peak {}", c, peak);
+        for(size_t c = 0U; c != mat_view.cols(); ++c)
+            fmt::print("{}{}", mat_view(r, c), c + 1 != mat_view.cols() ? ", " : "");
+        fmt::print("\n");
     }
 }
 
@@ -55,28 +54,29 @@ arma::fmat to_fmat(vpp::mat_view<const float> v)
 int main()
 {
     arma::fmat audio(8, 3); // 8 frames, 3 channels
+
     for(arma::uword i = 0; i < audio.n_elem; ++i)
         audio(i) = static_cast<float>(i);
 
     fmt::println("whole matrix:");
-    print_peaks(audio);
+    print(audio);
 
     // Halve frames 4.. of channels 1 and 2 only: a strided block, no copy.
     apply_gain(audio.submat(4, 1, 7, 2), 0.5f);
 
     fmt::println("after halving the tail of channels 1-2:");
-    print_peaks(audio);
+    print(audio);
 
     fmt::println("frames 0-3 only:");
-    print_peaks(audio.rows(0, 3));
+    print(audio.rows(0, 3));
 
     fmt::println("channel 2 only:");
-    print_peaks(audio.col(2));
+    print(audio.col(2));
 
     // A view is cheap to slice further, e.g. skipping the first 2 frames.
     vpp::mat_view<const float> view = audio;
     fmt::println("frames 2.., channels 0-1:");
-    print_peaks(view.rows_from(2).col_range(0, 2));
+    print(view.rows_from(2).col_range(0, 2));
 
     fmt::println("sum of channel 0: {}", sum(vpp::as_view(audio.col(0))));
 
@@ -84,6 +84,6 @@ int main()
     fmt::println("copied tail is {} x {}", tail.n_rows, tail.n_cols);
 
     // Does not compile: the temporary matrix would die before the view.
-    //   print_peaks(arma::fmat(4, 4));
+    //   print(arma::fmat(4, 4));
     return 0;
 }
