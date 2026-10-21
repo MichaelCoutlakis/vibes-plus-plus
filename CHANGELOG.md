@@ -5,6 +5,17 @@ All notable changes to this project will be documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `<vpp/algorithm.hpp>`: index-returning algorithms in the spirit of Armadillo's `index_max` / `index_min`
+  - `index_max(r, proj)`, `index_min(r, proj)`: index of the largest / smallest element by an optional projection
+  - `index_nearest(r, x, proj)`: index of the element whose projection is nearest to `x`
+  - `index_nearest_sorted(r, x, proj)`: the same by binary search, for ranges sorted by the projection
+  - Throw `std::invalid_argument` on an empty range; ties go to the lowest index
+- `vpp::abs`: absolute value as a `constexpr` function object, usable as a projection (`std::abs` is not addressable)
+- `vpp::distance_to(x)`: projection giving `|e - x|`, without wrapping for unsigned types
+
 ## [0.2.0] - 2026-10-21
 
 ### Added

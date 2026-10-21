@@ -3,10 +3,82 @@
  * SPDX-FileCopyrightText: 2026 Michael Coutlakis
  *****************************************************************************/
 #pragma once
+#include <cmath>
+#include <concepts>
+#include <cstdlib>
 #include <functional>
+#include <type_traits>
+#include <utility>
 
 namespace vpp
 {
+
+/// Function-object type of vpp::abs.
+struct abs_fn
+{
+    template <typename T>
+    constexpr auto operator()(const T &x) const
+    {
+        if constexpr (std::is_unsigned_v<T>)
+            return x;
+        else if constexpr (std::is_arithmetic_v<T>)
+            return x < T{} ? static_cast<T>(-x) : x;
+        else
+        {
+            using std::abs;
+            return abs(x); // e.g. std::complex: the magnitude
+        }
+    }
+};
+
+/// Absolute value as a function object, usable as a projection or callback.
+///
+/// `std::abs` cannot be passed as an argument: it is an overload set, and the
+/// standard library does not permit taking the address of its functions.
+///
+///   auto i = vpp::index_max(spectrum, vpp::abs); // largest-magnitude bin
+///
+/// Unsigned values are returned unchanged; other arithmetic types are negated
+/// when below zero (constexpr, unlike `std::abs` before C++23); anything else
+/// (e.g. `std::complex`) goes to `abs` found by `std::` or argument-dependent
+/// lookup.
+///
+/// @note As with `std::abs`, the absolute value of the most negative signed
+///       integer is not representable.
+inline constexpr abs_fn abs{};
+
+/// A projection giving the distance `|x - target|` from a fixed target.
+///
+///   auto i = vpp::index_min(v, vpp::distance_to(x)); // see vpp::index_nearest
+///
+/// For totally ordered operands the distance is computed as the larger minus
+/// the smaller, so it does not wrap for unsigned types; otherwise (e.g.
+/// `std::complex`) it is `vpp::abs(x - target)`.
+///
+/// @warning With unsigned elements, use an unsigned target: comparing a signed
+///          target against unsigned elements applies the usual arithmetic
+///          conversions.
+template <typename T>
+class distance_to
+{
+public:
+    constexpr explicit distance_to(T target) :
+        m_target(std::move(target))
+    {
+    }
+
+    template <typename U>
+    constexpr auto operator()(const U &x) const
+    {
+        if constexpr (std::totally_ordered_with<U, T>)
+            return x < m_target ? m_target - x : x - m_target;
+        else
+            return vpp::abs(x - m_target);
+    }
+
+private:
+    T m_target;
+};
 
 /// A comparator that compares two objects by a projected value.
 ///

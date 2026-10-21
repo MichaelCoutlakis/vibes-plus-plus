@@ -5,6 +5,7 @@
 #include <vpp/functional.hpp>
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <complex>
 #include <functional>
 #include <memory>
 #include <set>
@@ -71,4 +72,72 @@ TEST(compare_proj, IsEmptyAndStateless)
 {
     static_assert(std::is_empty_v<vpp::compare_proj<&player::score>>);
     EXPECT_TRUE(std::is_empty_v<vpp::compare_proj<&player::score>>);
+}
+
+// ---------------------------------------------------------------------------
+// abs
+// ---------------------------------------------------------------------------
+
+TEST(abs, HandlesArithmeticTypes)
+{
+    EXPECT_EQ(vpp::abs(-3), 3);
+    EXPECT_EQ(vpp::abs(3), 3);
+    EXPECT_EQ(vpp::abs(7u), 7u);
+    EXPECT_DOUBLE_EQ(vpp::abs(-2.5), 2.5);
+    static_assert(std::is_same_v<decltype(vpp::abs(short{-1})), short>);
+}
+
+TEST(abs, IsConstexpr)
+{
+    static_assert(vpp::abs(-4) == 4);
+    static_assert(vpp::abs(-1.5) == 1.5);
+}
+
+TEST(abs, GivesComplexMagnitude)
+{
+    EXPECT_DOUBLE_EQ(vpp::abs(std::complex<double>{3, -4}), 5.0);
+}
+
+TEST(abs, WorksAsProjection)
+{
+    std::vector<int> v{-5, 2, -1, 4};
+    std::ranges::sort(v, {}, vpp::abs);
+    EXPECT_EQ(v, (std::vector<int>{-1, 2, 4, -5}));
+}
+
+// ---------------------------------------------------------------------------
+// distance_to
+// ---------------------------------------------------------------------------
+
+TEST(distance_to, MeasuresBothSidesOfTarget)
+{
+    const vpp::distance_to d(10);
+    EXPECT_EQ(d(7), 3);
+    EXPECT_EQ(d(13), 3);
+    EXPECT_EQ(d(10), 0);
+}
+
+TEST(distance_to, DoesNotWrapForUnsigned)
+{
+    const vpp::distance_to d(4u);
+    EXPECT_EQ(d(3u), 1u);
+    EXPECT_EQ(d(10u), 6u);
+}
+
+TEST(distance_to, AcceptsMixedArithmeticTypes)
+{
+    const vpp::distance_to d(2.5);
+    EXPECT_DOUBLE_EQ(d(1), 1.5);
+    EXPECT_DOUBLE_EQ(d(4), 1.5);
+}
+
+TEST(distance_to, MeasuresComplexByMagnitude)
+{
+    const vpp::distance_to d(std::complex<double>{1, 1});
+    EXPECT_DOUBLE_EQ(d(std::complex<double>{4, 5}), 5.0);
+}
+
+TEST(distance_to, IsConstexpr)
+{
+    static_assert(vpp::distance_to(5)(2) == 3);
 }

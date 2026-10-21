@@ -18,6 +18,9 @@ target_link_libraries(test_ola_frame_buffer PRIVATE vpp::vpp GTest::gmock_main)
 add_executable(test_functional test_functional.cpp)
 target_link_libraries(test_functional PRIVATE vpp::vpp GTest::gmock_main)
 
+add_executable(test_algorithm test_algorithm.cpp)
+target_link_libraries(test_algorithm PRIVATE vpp::vpp GTest::gmock_main)
+
 add_executable(test_macros test_macros.cpp)
 target_link_libraries(test_macros PRIVATE vpp::vpp GTest::gmock_main)
 
@@ -37,6 +40,7 @@ include(GoogleTest)
 gtest_discover_tests(test_keyed_vector)
 gtest_discover_tests(test_ola_frame_buffer)
 gtest_discover_tests(test_functional)
+gtest_discover_tests(test_algorithm)
 gtest_discover_tests(test_macros)
 gtest_discover_tests(test_thread)
 gtest_discover_tests(test_mat_view)
