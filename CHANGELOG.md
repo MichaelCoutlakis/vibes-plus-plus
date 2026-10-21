@@ -5,7 +5,7 @@ All notable changes to this project will be documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-21
 
 ### Added
 - `<vpp/algorithm.hpp>`: index-returning algorithms in the spirit of Armadillo's `index_max` / `index_min`
@@ -19,6 +19,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - `compare_proj` is transparent and accepts mixed operands: an element and an already-projected key (either order), or derived and base elements
   - Associative containers can look up by key, e.g. `by_name.find(std::string_view{"ada"})`, without constructing an element
+  - `Proj` must now be SFINAE-friendly: pointers to members are, but an unconstrained generic lambda no longer compiles
 
 ## [0.2.0] - 2026-10-21
 
