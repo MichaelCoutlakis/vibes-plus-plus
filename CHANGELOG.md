@@ -5,7 +5,7 @@ All notable changes to this project will be documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-21
 
 ### Added
 - `mat_view<T>` / `cube_view<T>`: non-owning views of column-major matrices and cubes, or blocks of them
